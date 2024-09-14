@@ -1,0 +1,1193 @@
+\documentclass[a4paper, 11pt]{article}
+\usepackage{amsmath}
+\usepackage{authblk}
+\usepackage[T1]{fontenc} % to get < and > correctly
+\usepackage{geometry}
+  \geometry{verbose,tmargin=2cm,bmargin=2cm,lmargin=3cm,rmargin=2cm}
+  \setcounter{secnumdepth}{3}
+  \setcounter{tocdepth}{3}
+\usepackage{inconsolata} % Set nice mono font for code
+\usepackage[utf8]{inputenc}
+\usepackage[ttscale=0.85]{libertine}
+\usepackage{makeidx}
+  \makeindex
+\usepackage{natbib}
+\usepackage[hyphens]{url}
+\usepackage[%unicode=true,pdfusetitle,
+ %bookmarks=true,bookmarksnumbered=true,bookmarksopen=true,bookmarksopenlevel=2, pdfborder={0 0 1},backref=true,colorlinks=false, 
+ breaklinks=true,hidelinks]{hyperref}
+\usepackage{titlesec} % for titleformat
+\usepackage[nottoc]{tocbibind} % include reference in table of content
+\usepackage{wrapfig}
+\usepackage[dvipsnames]{xcolor}
+
+%\makeatletter
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% User specified LaTeX commands.
+% % % % % % %  section numbering onto margins % % % %
+\newlength\mylensection
+\setlength\mylensection{\dimexpr\oddsidemargin+1.1cm+\hoffset\relax}
+\titleformat{\section}{\normalfont\Large\itshape}{\llap{\hspace*{-\mylensection}\textcolor{YellowGreen}{\textbf{\LARGE{ \thesection}}}\hfill}}{0em}{} %
+
+\newlength\mylensubsection
+\setlength\mylensubsection{\dimexpr\oddsidemargin+1.1cm+\hoffset\relax}
+\titleformat{\subsection}{\normalfont\large\itshape}{\llap{\hspace*{-\mylensubsection}\textcolor{YellowGreen}{\textbf{\Large{ \thesubsection}}}\hfill}}{0em}{} %
+
+\newlength\mylensubsubsection
+\setlength\mylensubsubsection{\dimexpr\oddsidemargin+1.1cm+\hoffset\relax}
+\titleformat{\subsubsection}{\normalfont\large\itshape}{\llap{\hspace*{-\mylensubsubsection}\textcolor{YellowGreen}{\textbf{\Large{ \thesubsubsection}}}\hfill}}{0em}{} %
+
+
+\renewcommand{\textfraction}{0.05}
+\renewcommand{\topfraction}{0.8}
+\renewcommand{\bottomfraction}{0.8}
+\renewcommand{\floatpagefraction}{0.75}
+
+\newcommand{\package}[1]{\textbf{#1}}
+\newcommand{\proglang}[1]{\textsl{#1}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\ind}[1]{#1\index{#1}}           			   % \ind{bla} instead of bla\index{bla}
+\newcommand{\indE}[1]{\emph{#1}\index{#1@\emph{#1}}}       % dito for emphasised words (e.g. English)
+\newcommand{\indR}[1]{\texttt{#1}\index{#1@\texttt{#1}}}   % dito for typewriter
+
+
+\renewcommand{\vec}[1]{\mathbf{#1}}                   % replaces the arrow over vectors by bold-print
+
+
+%\makeatother
+\frenchspacing % avoid long spaces after a "."
+
+\begin{document}
+%\SweaveOpts{concordance=TRUE} % make sure that Sweave preferences are set to "knitr"!
+<<setup, include=FALSE, cache=FALSE>>=
+library(knitr)
+opts_chunk$set(fig.path='figure/', fig.align='center', fig.width=6, fig.height=6, fig.show='hold', cache=TRUE, tidy=T, tidy.opts=list(width.cutoff=70))
+render_listings()
+@
+
+\title{Neither global nor consistent: a technical comment on the tree diversity-productivity analysis of Liang et al. (2016)}
+
+\author[1]{Carsten F. Dormann} %(\href{mailto:carsten.dormann@biom.uni-freiburg.de}{carsten.dormann@biom.uni-freiburg.de})
+\author[1]{Helge Schneider}
+\author[1]{Jonas Gorges}
+
+\affil[1]{Biometry \& Environmental System Analysis, University of Freiburg, Germany}
+\affil[ ]{\href{mailto:carsten.dormann@biom.uni-freiburg.de}{carsten.dormann@biom.uni-freiburg.de}}
+
+%\thanks{\href{mailto:carsten.dormann@biom.uni-freiburg.de}{carsten.dormann@biom.uni-freiburg.de}}
+
+\maketitle
+
+\abstract{
+\noindent The publication of Liang et al. (2016, Science) seems to demonstrate very clearly that increasing tree species richness substantially increases forest productivity. To combine data from very different ecoregions, the authors constructed a relative measure of tree species richness. This relative richness however confounds plot-level tree species richness and the polar-tropical gradient of tree species richness. We re-analysed their orginal data, computing a regional measure of tree species richness and addressing several other issues in their analysis. We find that there is virtually no effect of relative tree species richness on productivity when computing species richness at the local scale. Also, different ecoregions have very different relationships between tree species richness and productivity. Thus, neither the ``global'' consistency nor the actual effect can be confirmed.}
+
+
+\section*{}
+Observational studies of the species-richness-ecosystem functioning relationship are correlational and not causal. Observing a consistent correlative effect of tree species richness on forest productivity (TSP-P) across a wide range of biomes, however, would make this relationship a reliable principle on which to build recommendations for forestry and forest conservation. The publication of \citet{Liang2016} report on such a consistent, global TSP-P-relationship, based on forest inventory data from over 600,000 plots in 12 different ecoregions.
+
+There are several logical and technical flaws in their analysis; correcting them also removes the reported global relationship and thus its role as principle for forest management. We identified the following problems with the original analysis: 
+(1) The authors computed ``relative tree species richness'' as proportion of the maximum value. Thereby it represents a gradient from boreal to tropical plots, rather than in \emph{local} species richness. When instead computing species richness relative to the maximum value in the region the effect of species richness on productivity is dramatically reduced. 
+(2) Plots are overwhelmingly from temperate forest; indeed only some 2500 plots are from the tropics (equivalent to 0.4\%), despite these forests representing around 30\% of the world's forest. Stratifying the plots accordingly weakens the TSR-P-relationship. 
+(3) In the spatial regression model, distances between plots were computed without taking the spherical nature of earth into account. This had little effect on the slope estimate of the TSR-P-relationship.
+(4) The computational burden of the spatial model required subsampling the data to 500 data points. The authors did not correctly compute confidence intervals for this approach, wrongly interpreting subsampling as bootstrapping and additionally incorrectly computing bootstrap standard errors. A correct subsampling-based estimation led to approximate trippling of the reported confidence interval.
+(5) As noted earlier \citep{Schulze2018}, some 4\% of the plots had productivity values (far) beyond what is biologically plausible \citep{Stape2010}. The likely reason is that small plots with large inventory errors in the productivity may lead to erratically high values. Not taking this into account in the analysis, e.g. by down-weighting plots with productivities above 80 m$^3$ha$^{-1}$y$^{-1}$ at least indicates an unreflected use of data. It also leads to an overestimation of the absolute productivity. Whether that is the main reason for productivity increases dramatically higher than any reported from experimental setups \citep{Zhang2012, Vila2013, Huang2018, Jactel2018, Ammer2019} is unclear.
+
+Combining corrections for these points led to a new global analysis, with a negligible effect of tree species richness on a site's volumetric productivity (Fig. 1 left; see supplementary material for the full analysis including R-code).
+\begin{figure}
+  \centering
+  \includegraphics[width=0.35\textwidth]{figure/plot_new_model-1}
+  \includegraphics[width=0.35\textwidth]{figure/plot_regional_theta_estimates-1}
+  \caption{Comparison of reproduced analysis of \citet{Liang2016} (black) and corrected analysis of the same data (green), left, and re-analysis of the estimated species richness effect ($\hat{\theta}$) for each ecoregion separately, right. Red and green lines, right, are the original and the global re-analysis, respectively.}
+\end{figure}
+Furthermore, fitting the model to the 11 ecoregions with sufficient data separately shows that the global model is not consistent and provides a poor description of the ecoregions' specific TSR-P-relationships (Fig. 1 right). Also, there is no obvious benefit of scaling species richness, as the curves are more difficult to interpret when displayed as percentage of some maximal value (Fig. 2). Indeed, using a relative scale makes the species richness-effect (the $\theta$-estimate) harder to compare across biomes and insignificant in several cases.
+\begin{figure}
+  \centering
+  \includegraphics[width=0.49\textwidth]{figure/plot_by_region-1}
+  \includegraphics[width=0.49\textwidth]{figure/plot_by_region_with_S-1}
+  \caption{Biome-specific observed tree-species richness-productivity relationships (and 95\% confidence interval). (Left) Species richness expressed as percentage of regional maximum. (Right) Productivity as changing with absolute species richness. Note that the shape of the curves can change when re-scaling species richness, as the values enter the analysis log-transformed.}
+\end{figure}
+
+In summary, the analysis presented by \citet{Liang2016} is flawed in several respects, leading to a spuriously strong effect of tree species richness on forest productivity at the global level. While a re-analysis correlatively confirms a positive TSR-P-relationship for most ecoregion, these effects vary substantially in their strength and should be examined for each system separately. Overall, the original publication has thus added very little to our understanding, as both positive and biome-specific effects of species richness were already known before their publication \citep[see, e.g.,][]{Whittaker2003,Vila2007,Paquette2010,Whittaker2010,Zhang2012}, and the global consistency could not be upheld.
+
+\clearpage 
+
+\appendix
+
+\section*{\textbf{\emph{Appendix: Reproducible analysis with comments and conclusions for each step}}}
+
+\tableofcontents
+
+\section{Introduction}
+The positive effect of species richness on various measure of ecosystem functioning is generally undisputed \citep{Cardinale2012}, even though this effect levels off fairly rapidly as the number of species beyond ``few'' \citep{Cardinale2006, Isbell2011}. Such fundamental understanding does not necessarily translate into applicable knowledge, and hence the publication of \citet{Liang2016} is a landmark step in converting academic biodiversity-ecosystem functioning into on-the-ground forest management. They claim to describe a globally applicable relationship between tree species richness and forest productivity, which, if correct, could guide forest management around the world without specific understanding of local or regional specifics. 
+
+On re-analysing the excellent data base compiled by \citet{Liang2016}, we were originally curious to investigate an unanswered question, namely whether the global tree-richness-productivity-relationship is actually anywhere near as good as one built, on the same data, for a specific biome. Furthermore, we were also concerned with describing a partial dependence plot for the effect of tree species richness, rather than the conditional plot presented by \citet{Liang2016}; the difference being that in their plot, the environmental predictors used in the model (such as basal area, temperature, precipitation and elevation) must be known, while in a partial dependency plot the \emph{marginal} effect of tree species richness, independent of the actual local setting, would be depicted.% In other words, if we knew nothing else but the relative species richness of a plot, how well could we predict productivity of that site?
+
+During the analysis, we realised that these initial questions were of secondary importance, as we discovered conceptual and statistical issues that cast substantial doubt on the results presented by \citet{Liang2016}. Since the first author initially did not provide his code, we had to rely on the method description and guessing to reproduce the analysis.\footnote{This R-code of Liang is now available here: \url{https://github.com/jingjingliang2018/GFB1/blob/master/R_script_Github10312008.R}} From the reconstruction we modified the original model to correct for some mistakes, as detailed below, to derive our new version of the global relationship. In the next step, we predicted from the global model to the average conditions of each biome, and compared this prediction with those of a biome-specific model from the same data base.
+
+In the following, we present first the original analysis, then the modifications we introduce. We close with a new global and a biome-specific analysis.
+
+
+\section{Reproducing the original tree richness-productivity relationship}
+
+\subsection{Data preparation}
+The data are available under \url{https://figshare.com/articles/GFB1_data_figshare_xlsx/4286552} for all countries except New Zealand, whose data are available from \url{https://datastore.landcareresearch.co.nz/dataset/new-zealand-forest-plot-data-in-global-forest-biodiversity-dataset}, both as Excel files.
+Upon downloading and merging the files, here is a summary of its content (in the following, code used for checking is outcommented):
+<<load, merge, summary of data, eval=T>>=
+library(readxl)
+bpr_data_global <- read_excel("../Liang2016Science_GFB1_data_figshare.xlsx")
+#dim(bpr_data_global) # check dimensions: 773100 x 21
+#summary(bpr_data_global)
+bpr_data_nz <- read_excel("../gfb1datanz.xlsx", sheet=2)
+#summary(bpr_data_nz) 
+#dim(bpr_data_nz) # check dimensions: 4026 x 21
+#intersect(bpr_data_global$FID, bpr_data_nz$FID) # no overlap in FID
+#intersect(bpr_data_global$PLOT, bpr_data_nz$PLOT) # no overlap in PLOT
+#all.equal(colnames(bpr_data_global), colnames(bpr_data_nz))  # TRUE
+bpr_data <- rbind(bpr_data_global, bpr_data_nz)
+#dim(bpr_data) # check dimensions: 777126
+summary(bpr_data)
+@
+The meaning of the different column titles is provided in the meta-data to the figshare download. Most importantly, the response, productivity [m$^3$ha$^{-1}$y$^{-1}$] is given in column P, and the number of tree species observed in a plot is given in column S. As we can see from the summary, productivity ranges from $-360$ to 1090 m$^3$ha$^{-1}$y$^{-1}$, with most data between 1 and 9 m$^3$ha$^{-1}$y$^{-1}$. Species numbers range from 0 to 405 (we cannot provide a density here, as plot sizes are not provided and range from $<100$ to $>1100$ m$^2$, only the 95\% sampling interval was provided in the paper), with most plots between 2 and 7 species.
+
+\citet{Liang2016} excluded plots with harvest volume $>50$\% of stocking volume (page 5), but do not provide the IDs of these plots. We thus excluded all plots with negative productivity and also those with productivity of 0 (as our model including them has a very different AIC to those reported by the authors).
+
+Additionally, we remove plots with a species richness of 0, basal area of 0, those with a T3-value of 0 (temperature seasonality as standard deviation times 1000, making a value of 0 indicating no data, rather than no seasonality), IAA (indexed annual aridity times 10$^{-4}$)-values of 0, and manually assigned four plots with an ecoregion value $>13$ based on their coordinates in googleEarth. (Although there are 14 ecoregions in WWF's definition, the 14th in this data set was wrongly coded in the data and in fact plots were in rainforests.)
+%taken from https://www.nature.com/articles/nature14967.epdf
+<<exclusions and corrections>>=
+bpr_data <- bpr_data[bpr_data$P > 0, ] # Remove P values <= 0 
+bpr_data <- bpr_data[bpr_data$S != 0, ] # Delete species richness == 0  
+bpr_data <- bpr_data[bpr_data$G != 0, ] # remove plots with basal area == 0
+bpr_data <- bpr_data[bpr_data$T3 != 0, ] # Delete rows where T3 == 0 
+bpr_data <- bpr_data[bpr_data$IAA != 0, ] # Delete rows where IAA and PET == 0
+dim(bpr_data)
+# reassign ecoregions > 13 by their LonLat values
+# LonLat = -48.7?, -26.2? Santa Catarina Rain forest, Brasil
+bpr_data[bpr_data$Ecoregion == 14, ][1:3, ]$Ecoregion <- 1 
+# LonLat = -67.1?,  18.0? Llanos lajas Dry forest , Puerto Rico
+bpr_data[bpr_data$Ecoregion == 14, ]$Ecoregion <- 2 
+# LongLat = 30.5?, 1.3? Ituri forest, Rainforest
+bpr_data[bpr_data$Ecoregion == 98, ]$Ecoregion <- 1 
+# key to ecoregions: see Liang et al.  Fig. 1
+rm(bpr_data_global, bpr_data_nz)
+@
+Some 1139 plots were recorded as ecoregion 0, which, when plotted, were distributed along the coasts across the world, i.e. belonging to very different ecoregions. We have no idea why these are classified as ``0'', but excluded them rather than manually and labouriously assigning them to appropriate ecoregions. Some plots were recorded repeatedly in the database (e.g. plot 0 occurs 370 times), but we kept them all in the data, as FIDs were unique, and so are their geographical coordinates.
+<<map with plot per ecoregion, out.width="1.1\\textwidth", fig.width=14, fig.height=8, dev="png", message=F>>=
+library(maptools)
+data(wrld_simpl)
+#plot(wrld_simpl) # show where ecoregion 0 is
+#with(bpr_data[bpr_data$Ecoregion==0,], points(Lon, Lat, col="green", pch=16, 
+#  cex=0.5))
+bpr_data <- bpr_data[bpr_data$Ecoregion != 0, ]
+dim(bpr_data)
+# show all ecoregions:
+library(maptools)
+data(wrld_simpl)
+par(mar=c(0,0,0,0))
+plot(wrld_simpl)
+cols <- rainbow(13)
+for (i in c(1,2,4:13)){# there is no #3
+  with(bpr_data[bpr_data$Ecoregion==i,], points(Lon, Lat, col=cols[i], pch=16, 
+                                                cex=0.2))
+}
+table(bpr_data$Ecoregion)
+@
+At the end we are left with a data set of 636616 rows, heavily relying on the forest inventory data of temperate forests (ecoregions 4 and 5 comprise 615576 plots, i.e. 97\% of all data points). Since for tundra, ecoregion 11, only 9 data points are available, we exclude it from the biome-specific analyses lateron.%; see their Fig. 1, page 1 for names of ecoregions).
+
+Before analysing these data, let's have a look at them, separately for each ecoregion:
+<<plot raw data, warning=FALSE, message=FALSE, tidy=FALSE, fig.width=7, fig.height=6, cache=T>>=
+# add information on tree proportions and biome names to data set:
+biome_trees <- cbind.data.frame(c(1, 2, 4:13), c("tropMoist", "tropDry", "tempBroadleaf", 
+              "tempConifer" , "boreal" , "tropGrass" , "tempGrass" , "floodedGrass", 
+              "montaneGrass", "tundra", "MediterrForest", "desert"), 
+              c(799.4, 156.4, 362.6, 150.6, 749.3, 318, 148.3, 64.6, 60.3, 94.9, 
+                53.4, 53)) # in billions of trees, from Crowther et al. 2015 
+colnames(biome_trees) <- c("Ecoregion" , "biomeName" , "nOfTrees")
+par(mfrow=c(3,4), mar=c(3,3,1,0), oma=c(4,4,0,0), las=1)
+for (i in c(1,2,4:13)){
+  with(bpr_data[bpr_data$Ecoregion == i, ], smoothScatter(P ~ S, 
+       colramp=colorRampPalette(c("white", cols[i])), pch=".", col=cols[i], xlab="", 
+       ylab="", main=biome_trees$biomeName[biome_trees$Ecoregion==i]))
+}
+mtext(side=1, text="number of tree species per plot", cex=1.5, line=1, outer=T)
+mtext(side=2, text=expression(paste("productivity [", m^{3} ~~ ha^{-1} ~~ y^{-1}, "]")), 
+      cex=1.5, line=1, outer=T, las=0)
+@
+It is visible, at first glance, that these data are suspicious. The highest volume productivity ever measured in situ (rather than estimated from inventories), in a fertilised Eucalypt plantation in Brazil, was around 80 m$^3$ha$^{-1}$y$^{-1}$ \citep{Stape2010}. In this data set, the highest value is over 1000 m$^3$ha$^{-1}$y$^{-1}$, and there are 4154 points with values larger than 80 m$^3$ha$^{-1}$y$^{-1}$ (over 3700 of those are from the US, but Germany, France and Japan also contribute some data points): 
+<<tabulate extremes>>=
+sum(bpr_data$P > 80)
+table(bpr_data$Country[which(bpr_data$P > 80)]) 
+table(bpr_data$Ecoregion[which(bpr_data$P > 10 & bpr_data$P < 80)]) 
+@
+Moreover, as the last figure shows, some unlikely ecosystems contributed to high productivity sites (even after excluding obviously wrong data points): tundra, Mediterranean forest and deserts contributed dozens to thousands of plots with productivity exceeding 10 m$^3$ha$^{-1}$y$^{-1}$.
+%It seems remarkable that the authors of the paper did not notice that, or proceeded with the analysis nevertheless. To be fair, unrealistically large productivity was noticed for ``only'' 23561 out of 636616 plot, i.e. less than 4\%. 
+It is possible that the authors did remove some of these plots before the analysis without mentioning it explicitly in the methods (p. 5: ``Intensively managed forests with harvests exceeding 50 percent of the stocking volume were excluded from this study.''; there is no indication in the data, which plots are concerned).\footnote{We have sent this document on 19 Sept 2018 to the first author and, in response, subsequently (on 31 Oct 2018) he made R-code of (the main part of) their analysis avaiable under \url{https://github.com/jingjingliang2018/GFB1/blob/master/R_script_Github10312008.R}. In that code it is clear that plots with productivity larger than 533 m$^3$ha$^{-1}$yr$^{-1}$ and with species richness larger than 270 species were removed. The reasoning behind these values is not communicated in that document. Going through their code, we are pleased to notice that we have correctly interpreted their methods section and that our points of content are not mere misunderstandings.}
+
+Nevertheless, as we are able to reproduce the analysis to a large extent (see below), we assume that many of these data points were still in the data set analysed. %Also, these obvious mistakes cast an overall doubt on the quality of the data preparation itself.
+
+\subsection{Spatial model}\label{sec:GLS}
+\citet{Liang2016} employ a Generalised Least Squares (GLS) approach to accommodate spatial autocorrelation. Since the GLS is rather time-consuming, and it cannot handle data sets beyond a few thousand data points (depending on computer memory), they took random subsamples of 500 plots from the above data and ran the GLS on that subsample.\footnote{\citet{Liang2016} invent the name ``spatial random forest'' for this procedure, which is rather misleading. First, the randomForest algorithm \citep{Breiman2001} uses classification and regression trees as building blocks, hence the name ``forest'' as a large group of ``trees''. Second, in randomForest the actual model is altered in each tree, by randomly selecting the variables trialed at each node. Third, while randomForest samples data points, it does so \emph{with replacement}, i.e. as a bootstrap. As a result, the number of data points are the same as the full data set in each tree. What the subsampling approach of \citet{Liang2016} and the randomForest have in common is the use of aggregating many models. Since these are not actual bootstraps (because Liang et al. subsample), this is not proper ``bagging'' either. Thus, the term ``spatial random forest'' is misleading and suggests a sampling theory which actually does not apply to this approach. Accordingly, we shun this term, and also will not use the term ``bootstrapping'' unless sampling is carried out \emph{with} replacement.}
+For each such subsample, a new variable \v{S} was computed as \v{S}$_i$ = $\frac{\text{S}_i}{\max({\text{S}_\text{subsample}})}$.
+The actual model is at the log-log-scale (i.e. both P and \v{S} were log-transformed). \v{S} is interpreted as ``relative species richness'' and is claimed to ``facilitate inter-biome comparison'' (p. 7).\footnote{We will return to the computation of relative species richness as a critical flaw later.}
+
+So the actual steps of the analysis are:
+\begin{enumerate}
+ \item Draw a random subsample of 500 data points (without replacement).
+ \item Compute \v{S} for this sample.
+ \item Log-transform P and \v{S}.
+ \item Run a GLS with log(P) as response and log(\v{S}), G (basal area), T3 (standard deviation of temperature), C1 (annual precipitation), C3 (precipitation of warmest quarter), PET (potential evapotranspiration), IAA (indexed annual aridity) and E (elevation) as predictors.\footnote{Sources for each are given in the metadata to the New Zealand data.} The spatial distances are implicitly computed from geographic coordinates using the \texttt{corSpher} correlation structure.\footnote{We will return to the misinterpretation of this correlation as being computed on a sphere later.} Since coordinates of the released data were rounded, we jitter them slightly to avoid distances of zero.
+ \item Store model estimates and repeat.
+\end{enumerate}
+While \citet{Liang2016} run 10000 bootstraps, we only do 50, as the results do not change substantially anymore after that. (Note that our code is not made for speed but for intellegibility.) Also, as the authors kept the nugget and range fixed in their final run, we use these values here (0.8 and 50, respectively).
+
+As illustration, here is a single model run:
+<<original run GLS>>=
+library(nlme) # for gls
+bpr_data$lat <- jitter(bpr_data$Lat)
+bpr_data$lon <- jitter(bpr_data$Lon)
+set.seed(12)
+index <- sample(nrow(bpr_data), 500)
+subset <- bpr_data[index, ]
+subset$Sbreve <- subset$S / max(subset$S)
+fgls <- gls(log(P) ~ log(Sbreve) + G + T3 + C1 + C3 + PET + IAA + E, 
+            correlation=corSpher(c(50, 0.8), form=~ lon + lat, nugget=T, fixed=T), 
+            data=subset)
+summary(fgls)
+cor(predict(fgls), log(subset$P))^2 # R2
+@
+The part after setting the seed will be repeated below, and from the summary we only keep the coefficient estimates.
+<<original 50 repeats, tidy=F>>=
+repeatedGLS <- function(N=500){ # function running one random subset GLS
+  index <- sample(nrow(bpr_data), N)
+  subset <- bpr_data[index, ]
+  subset$Sbreve <- subset$S / max(subset$S)
+  fgls <- gls(log(P) ~ log(Sbreve) + G + T3 + C1 + C3 + PET + IAA + E, 
+              correlation=corSpher(c(50, 0.8), form=~lon+lat, nugget=T, fixed=T), 
+              data=subset)
+  r2 <- cor(predict(fgls), log(subset$P))^2 # R2
+  return( c(ell=logLik(fgls), AIC=AIC(fgls), BIC=BIC(fgls), R2=r2, coef(fgls)) )  
+}
+set.seed(123)
+coefMat <- t(replicate(50, repeatedGLS() ))
+library(matrixStats) # for colSds
+signif(rbind(mean= colMeans(coefMat), se=colSds(coefMat) ) , 3)
+# for comparison, there the results from 5000 replicates:
+if ("coefMat5000.Rdata" %in% dir()){
+  load("coefMat5000.Rdata")
+} else {
+  coefMat5000 <- t(replicate(5000, repeatedGLS() ))
+  save(coefMat5000, file="coefMat5000.Rdata")
+}
+signif(rbind(mean= colMeans(coefMat5000), se=colSds(coefMat5000) ) , 3)
+# results are similar enough to allow us to work with 50 repetitions of the subsampling
+@
+This approximates the results of \citet{Liang2016}'s Table 2, with the exception of the standard errors for the model coefficients, which Liang computed as incorrectly as standard deviation divided by the square root of the number of replicate models: correctly computed, the standard deviation of a bootstrap is the standard error of the statistic (here the goodness of fit measures and the coefficients). Hence, the row ``SE'' in the authors' table 2 must be multiplied by 100 to get to the correct values.\footnote{We shall return to the computation of error bars in a few sections. For now, please note that the classical boostrap's idea is to use the \emph{entire} data set when bootstrapping; only then will the bootstrapped standard errors be correct. Using the bootstrap on subsamples, in the way done by \citet{Liang2016}, does not constitute a valid statistical approach for computing standard errors for the full data set, neither in their way, nor in the way presented here (with the multiplication by 100). What this subsampling-bootstrapped standard errors deliver is an estimate of where the line would be with 500 data points, not for the full data set. \\
+There are subsampling procedures \citep[see][]{Politis1999}, but they require additional corrections on top of the subsampling itself.%In this case, one would proceed as follows (see \url{http://www.stat.umn.edu/geyer/5601/examp/subtoot.html}): compute the estimate of interest (in our case the value of $\theta$ for the full data set, $\hat{\theta}$; take a subsample (without replacement) of size $b$ (here 500) and estimate $\theta^*$ for it; repeat the last step many times; compute the vector $\vec{z}^* = \tau_b(\vec{\theta}^* - \hat{\theta}$), which is a vector of the bias of the subsample relative to the full estimate (and the correction term $\tau_{b}$ serves the intuitive purpose of scaling uncertainty: if we had used the full data set ($b=n$), then we would expect only a tiny difference between each $\theta^*$ and $\hat{\theta}$, and hence this ensures that the correct spread is achieved); compute quantiles of $z^*$ as confidence interval of $\theta$. Since we cannot compute $\hat{\theta}$ (the GLS won't handle the large dat set), we have to use the mean of $\vec{\theta}^*$ as plugin, $\widehat{\theta^*}$. Also note that the scaling term $\tau_b$ varies from statistic to statistic and must be estimated from varying subsample sizes \citep[chapter 8]{Politis1999}. In the simplest case, $\tau_b=\sqrt{b}/\sqrt{n}$, which is rather intuitive and exemplified further below.
+}
+
+\noindent\includegraphics[width=1.0\textwidth]{LiangTable2}
+
+Finally, we plot this relationship with the ``correct'' error bars. As parameter estimates are correlated, we cannot simply use the above standard errors to compute an error interval around the line. Instead, we predict with each of the 50 parameter sets the curve and compute 95\% quantiles from them as confidence intervals.\footnote{We do not know how Liang computed these, as he did not reply to our emails on this topic.}
+
+<<plot Liang, out.width="0.49\\textwidth", fig.align="center">>=
+beta <- coefMat[, 5:13]
+# set all values but log(Sbreve) to their mean:
+X <- as.matrix(data.frame("Intercept"=1, Sbreve=log(seq(0.01, 1, by=0.01)), 
+            t(colMeans(bpr_data[, c("G", "T3", "C1", "C3", "PET", "IAA", "E")]))))
+preds <- X %*% t(beta)
+par(mar=c(5,4,1,1))
+plot(1:100, exp(rowMeans(preds)), type="l", las=1, lwd=3, ylim=c(0, 10), 
+     xlab="relative species richness [%]", ylab="productivity")
+betaLiang <- c(3.816, 0.2625, 0.0146, -0.00011, 0.0016, 0.00174, -0.002566, -0.000134, -0.000809)
+Xliang <- X 
+Xliang[,2] <- log(seq(0.01, 1, by=0.01)*100) # uses %, not fraction
+liangLine <- Xliang %*% betaLiang
+lines(1:100, exp(liangLine), col="red", lwd=2)
+legend("topleft", legend=c("Liang", "re-analysis"), col=c("red", "black"), lwd=2, lty=1, bty="n", cex=1.5)
+@ 
+%\includegraphics[width=0.49\textwidth]{Liang1}
+We were thus able to reproduce the analysis of Liang et al. relatively faithfully, at least with respect to the expectation (we shall return to the error envelop in due course).
+
+Since their log-likelihood is 50 units higher, we suspect that in their analysis further plots were excluded. %Note that we employed \citet{Liang2016}'s settings for the GLS-model, rather than determining these parameters ourselves in this part of the analysis.
+
+
+
+\section{Corrections and improvements}
+In summary, we have been able to reproduce the analysis of \citet{Liang2016}.%, yielding however much larger error bars (due to an error in their computation).
+
+
+During this first step, we may already have noticed some issues with the analysis. Here is our list of things we improve on in the next sections, starting with the most important ones first:
+\begin{enumerate}
+  \item Evaluate the effect of unreasonably large values of productivity on the result.
+  \item Aggregating analyses of subsets, which comprise only a permille of the full data set, may introduce a bias relative to the full dataset. The mechanism behind this bias is the same that we criticised as first point, i.e. the computation of \v{S} on the basis of highest tree species richness in the subset, thereby ranging \v{S} differently for each subset. 
+  \item Minor point: The GLS can easily accommodate more than 500 points, so we can run subsamples of 1000, 2000 and 5000 points. This will slightly increase the chance of plots being relatively close to each other, and hence allows for a better estimation of the short-range spatial autocorrelation, possibly improving the estimates for nugget and range of the variogram.
+  \item Stratified draws of plots in proportion to the area this ecoregion's forests cover on the world. Currently only some 2500 points (out of 636000) are representing the tropical forests (labelled 1 and 2 below), despite their proportion of the world's forests being over 30\%.
+<<data points per ecoregion>>=
+tapply(bpr_data$FID, bpr_data$Ecoregion, length)
+t(biome_trees[, 1:2]) # labels
+@
+  \item The \texttt{corSpher}-structure used by \citet{Liang2016} suggests, in its name, that it would be appropriate for data on a sphere. That is not the case. The spherical model is only the name for a different shape of how spatial autocorrelation decreases with distance \citep{Pinheiro2000}, but it does not correct for the fact that on a sphere geographic distances cannot be computed from coordinates as Euclidean distance. To do so, we have to compute the so-called great-circle (or orthodromic) distance.
+  \item Calculate relative species richness \v{S} relative to what is the maximal species richness \emph{in that region}. Currently, the definition of relative species richness is not intuitive. Since only the tropics have plots with dozens to hundreds of species, \v{S} is effectively representing a gradient from cold to tropical plots.\footnote{This is crucial to understand, thus we try to repeat with other words. If we draw 500 plots randomly, with 97\% of them coming from temperate forests, then the highest species richness will be set by the very few plots from the tropics, more precisely ecoregion 1: tropical moist broadleaf forest. Thus, we divide the species richness of our temperate plots, say something between 1 and 10, by 80-400. Thus, low \v{S}-values will inevitably be from the temperate or boreal forests, while high \v{S}-values will be from the tropics.} 
+<<plot S by ecoregion, out.width="0.7\\textwidth", fig.width=10>>=
+plot(log10(S) ~ as.factor(Ecoregion), data=bpr_data, border="grey70", col="grey30", las=1)
+@
+  Thus, the so-called species richness gradient is in fact a latitudinal gradient. This is, in our opinion, a serious problem and leads to fundamental misinterpretation of the results.
+  We propose to compute \v{S} differently, namely relative to what is possible for a given plot. We could choose the maximal value for an ecoregion to scale tree species richness of each plot, or even more locally, the maximal species richness observed in, say, 100 km radius around a plot. This would lead to plots from any ecoregion being able to occupy the upper end of the relative species richness gradient, if they are species rich \emph{relative to their wider neighbourhood}.\footnote{Clearly, this is still not an ideal relative species richness, as we can imagine local conditions to vary at relatively small scale. However, we think that this step is already a major improvement in the actual meaning and interpretability of ``relative species richness'' and will come closer to what we think most of the authors actually understood \v{S} to be.}
+\end{enumerate}
+
+In the following, we demonstrate the effect of each of these improvements separately, always comparing it to our analysis of the data presented above. Arguably, as the data set changed, we may have to re-estimate the coefficients of the spatial autocorrelation, which we did not.
+
+
+
+\subsection{Do implausible productivity values distort the analysis?}
+As shown above, some 23,000 data points, around 4\% of the entire data set, have productivity values above the largest measured in the field. The probably reason is that forest inventories measure with a certain error, and if the error is large relative to the increase in biomass, it is easy to get unrealistically high productivity estimates, particularly in small plots with harvesting.
+
+There are, essentially, two ways to accommodate values that are clearly implausible: (i) omit them, or (ii) give the lower weight in the model. We only investigate the effect of omitting all values where P > 80 as the strongest, not necessarily most appropriate, way.
+
+<<omit P larger 80>>=
+bpr_data_less80 <- bpr_data[bpr_data$P <= 80, ]
+repeatedGLSless80 <- function(N=500){ # function running one random subset GLS
+  index <- sample(nrow(bpr_data_less80), N)
+  subset <- bpr_data_less80[index, ]
+  subset$Sbreve <- subset$S / max(subset$S)
+  fgls <- gls(log(P) ~ log(Sbreve) + G + T3 + C1 + C3 + PET + IAA + E, 
+              correlation=corSpher(c(50, 0.8), form=~lon+lat, nugget=T, fixed=T), 
+              data=subset)
+  r2 <- cor(predict(fgls), log(subset$P))^2 # R2
+  return( c(ell=logLik(fgls), AIC=AIC(fgls), BIC=BIC(fgls), R2=r2, coef(fgls)) )  
+}
+set.seed(123)
+coefMatless80 <- t(replicate(50, repeatedGLSless80() ))
+library(matrixStats) # for colSds
+signif(rbind(mean= colMeans(coefMatless80), se=colSds(coefMatless80) ) , 3)
+@
+%save.image(file="LiangReanalysis_workspace.Rdata")
+<<plot less 80, out.width="0.49\\textwidth", fig.align="center">>=
+betaless80 <- coefMatless80[, 5:13]
+predsless80 <- X %*% t(betaless80)
+par(mar=c(5,4,1,1))
+plot(1:100, exp(rowMeans(predsless80)), type="l", las=1, lwd=3, ylim=c(0, 13), 
+     xlab="relative species richness [%]", ylab="productivity")
+betaLiang <- c(3.816, 0.2625, 0.0146, -0.00011, 0.0016, 0.00174, -0.002566, -0.000134, -0.000809)
+Xliang <- X 
+Xliang[,2] <- log(seq(0.01, 1, by=0.01)*100) # uses %, not fraction
+liangLine <- Xliang %*% betaLiang
+lines(1:100, exp(liangLine), col="red", lwd=2)
+legend("topleft", legend=c("Liang", "P > 80 omitted"), col=c("red", "black"), lwd=2, lty=1, bty="n", cex=1.5)
+@ 
+Excluding the high-value plots leads to the expected drop in the absolute values of the TSR-P-relationship, but it does not substantially affect the slope estimate.
+
+\subsection{Aggregated subsets vs using the entire data set: do parameter estimates match?}
+As sample size of a regression problem increases, standard errors of model parameters decrease, typically as a function of $\sqrt{n}$. Thus, the 500-data point subset is likely to have much wider error bars than an analysis of the full 636616 data points. How much wider is somewhat difficult to estimate, as data are spatially autocorrelated, making the $\sqrt{n}$ an optimistic estimate. Following the logic of data cloning \citep{Lele2010a}, who show that repeating their data set 100 times yields $\sqrt{100}=10$ times to narrow standard errors, one can argue that the standard error computed from the subset-models will be $\sqrt{636616}/\sqrt{500}=34.6$ times too wide.
+
+We cannot test this idea on the GLS, as we have no computer at our disposal that can invert a 600000 $\times$ 600000 matrix as required by the GLS. Thus, we cannot fit a GLS on the full data set (otherwise Liang et al. would have done that, too). Instead, we use the non-spatial linear model, which is biased due to spatial autocorrelation, as we shall see. Still, if our 35-fold correction worked for the non-spatial regression (the ordinary least square: OLS), we would be happy to use it for the GLS.
+<<run OLS>>=
+repeatedOLS <- function(N=500){ # function running one random subset GLS
+  index <- sample(nrow(bpr_data), N)
+  subset <- bpr_data[index, ]
+  subset$Sbreve <- subset$S / max(subset$S)
+  flm <- lm(log(P) ~ log(Sbreve) + G + T3 + C1 + C3 + PET + IAA + E, data=subset)
+  r2 <- cor(predict(flm), log(subset$P))^2 # R2
+  return( c(ell=logLik(flm), AIC=AIC(flm), BIC=BIC(flm), R2=r2, coef(flm)) )  
+}
+set.seed(123)
+coefMatOLS <- t(replicate(50, repeatedOLS() ))
+signif(rbind(mean= colMeans(coefMatOLS), se=colSds(coefMatOLS) ) , 3)
+# full data set:
+Sbreve <- bpr_data$S / max(bpr_data$S)
+summary(fullfm <- lm(log(P) ~ log(Sbreve) + G + T3 + C1 + C3 + PET + IAA + E, data=bpr_data))
+@
+Resampling OLS and full data set analysis yield similar parameter estimates (apart from the intercept). As result, the \textbf{estimated effect of increasing ``relative species richness'' is substantially lower} in the subsampling approach than in the full model. We are confident that this effect will be similarly present in the GLS analysis and return to this issue in the section on increasing sample size of the subsampling.
+
+Let's plot the results:
+<<OLS plot, out.width="0.7\\textwidth", fig.width=6, fig.height=6>>=
+betaOLS <- coefMatOLS[, 5:13]
+predsOLS <- X %*% t(betaOLS)
+#CIsOLS <- apply(predsOLS, 1, quantile, c(0.025, 0.975))
+par(mar=c(5,4,1,1))
+# subsample CIs:
+plot(1:100, exp(rowMeans(predsOLS)), type="l", las=1, lwd=3, ylim=c(0, 17), 
+     xlab="relative species richness [%]", ylab="productivity")
+# GLS
+lines(1:100, exp(rowMeans(preds)), lwd=3, col="orange")
+# full data
+Xforfull <- data.frame("Intercept"=1, Sbreve=seq(0.01, 1, by=0.01), 
+            t(colMeans(bpr_data[, c("G", "T3", "C1", "C3", "PET", "IAA", "E")])))
+predsLM <- predict(fullfm, newdata=Xforfull, se.fit=T)
+lines(1:100, exp(predsLM$fit), col="blue", lwd=3)
+# Liang line
+lines(1:100, exp(liangLine), col="red", lwd=2)
+legend("topleft", bty="n", col=c("red", "orange", "blue", "grey"), legend=c("Liang", "re-analysis", "full OLS", "OLS-subs"), lwd=2, lty=1)
+@
+The take-home message of this is: subsampling causes bias, at least for the specific way \v{S} is computed by \citet{Liang2016}.
+
+\subsubsection{Scaling standard errors from subsamples to full data}
+To take the subsampling correction a step further, we now run subsamples of different size and try to identify a relationship between their (subsampling-derived) standard error for $\hat{\theta}$ and size of the subsample, $B$. As it happens, this relationship is best presented as a straight line on a log-log-plot.
+
+<<subsampling scaling coefficient, eval=T, out.width="0.5\\textwidth">>=
+SEQ <- c(100, 500, 1000, 5000, 10000, 50000, 100000, 500000)
+set.seed(123)
+count <- 0
+coefThetaOLS500tofull <- 0
+for (i in SEQ){
+  count <- count +1
+  fms <- replicate(50, repeatedOLS(N=i)[6]) # value 6 is theta
+  coefThetaOLS500tofull[count] <- sd(fms)
+  cat(i, "")
+  rm(fms)
+}
+sefull <- summary(fullfm)$coefficients[2,2] # se of theta
+plot(c(SEQ, 636616), c(coefThetaOLS500tofull, sefull), log="xy", xlab="B", ylab="sd_theta", pch=16, las=1)
+summary(lm(log(c(coefThetaOLS500tofull, sefull)) ~ log(c(SEQ, 636616))))
+@
+The standard error of the estimate of $\theta$ clearly decreases nicely as a power-law function of sample size, and fits well to the observed values:
+<<s correction>>=
+exp(1.05 - 0.54*log(636616)) # coefs from regression
+sefull
+@
+To apply this to the GLS, we have to make the assumption that the same proportionality holds for the GLS as for the OLS. If so, we can compute the standard error of the GLS, based on the subsampling of size $B=500$, as follows (as a simple rule of three):
+$$\hat{s}_\text{GLS} = e^{\frac{\ln(s_\text{OLSfull})}{\ln(s_\text{OLS500})}\ln(s_\text{GLS500})} = e^{\frac{\ln(0.002295)}{\ln(0.07239)}  \ln(s_\text{GLS500}) } = e^{2.314\ln(s_\text{GLS500})} 
+$$
+Thus, for the observed standard error of the GLS for subsampling size $B=500$ we have $s_\text{GLS500} = 0.0921$ (see section~\ref{sec:GLS}), which leads to an estimated standard error of the full model of $\hat{s}_\text{GLSfull}=0.00263$:
+<<>>=
+exp( log(sefull) / log(coefThetaOLS500tofull[2])  * log(colSds(coefMat)[6]) )
+@
+This is (obviously) dramatically better than the ``bootstrap'' estimate presented above, but still thrice the 0.0009 of \citet{Liang2016}.
+
+
+ 
+\subsubsection{Increasing the size of the subsamples for the GLS}
+As another step, we can briefly check whether increasing the size of the subsample from 500 to 5000 for the GLS makes an appreciable difference.\footnote{Beyond 5000 the GLS becomes extremely time consuming, running for many hours per model run.}
+<<GLS 5000>>=
+if ("coefMatGLS500to5000.Rdata" %in% dir()){
+  load("coefMatGLS500to5000.Rdata")
+} else {
+  set.seed(123)
+  system.time(coefMatGLS500 <- t(replicate(10, repeatedGLS(N=500) ))) #5s
+  system.time(coefMatGLS1000 <- t(replicate(10, repeatedGLS(N=1000) ))) # 1000: 72s
+  system.time(coefMatGLS2000 <- t(replicate(10, repeatedGLS(N=2000) ))) # 2000: 437s
+  system.time(coefMatGLS5000 <- t(replicate(10, repeatedGLS(N=5000) ))) # 5000: 6238s
+  save(coefMatGLS500, coefMatGLS1000, coefMatGLS2000, coefMatGLS5000, file="coefMatGLS500to5000.Rdata")
+}
+signif(rbind(mean= colMeans(coefMatGLS500), se=colSds(coefMatGLS500) ) , 3)
+signif(rbind(mean= colMeans(coefMatGLS5000), se=colSds(coefMatGLS5000) ) , 3)
+# R2 goes down, as do SEs
+#plot(log10(c(5, 72, 437, 6238)) ~ log10(c(500, 1000, 2000, 5000)))
+ # runtime increases as power law ...
+#plot(c(500, 1000, 2000, 5000), c(0.105, 0.062, .045, 0.0194), log="")
+# SE goes down as power law ...
+#lm(log10(c(0.105, 0.062, .045, 0.0194)) ~ log10(c(500, 1000, 2000, 5000))) # logY=0.955-0.714logX
+# -> logY(X=630000) = 0.955-0.714*56.799 = -39 -> ~0
+@
+The estimate of $\theta$ and most other model parameters is similar for sample size 500 and 5000, while the intercept and the model's R$^2$ goes down.
+
+What does that mean?
+\begin{enumerate}
+  \item Using small subsamples of a large data set leads to dramatic increases in parameter uncertainty. Thus, the (corrected) ``bootstrap'' approach of \citet{Liang2016} is likely to be very pessimistic. Since they did an error in the computation of their standard errors, the uncertainty limits provided in the original paper cannot be trusted.
+  \item Using the full data set led to \emph{very} different estimates for the model (comparing OLS for the resampled and the full data set, i.e. the grey and the blue curves above). By analogy, also the resampling-based estimates of the GLS are likely to be substantially biased.\footnote{The origin of this bias has probably to do with the re-scaling of species richness in each subset. If no high-diversity plot is present, then the left part of the relationship is stretched out to the right hand side without higher P-values, thereby pulling the entire curve down.}
+  \item Correction for spatial autocorrelation leads to lower estimates for productivity, roughly 80\% of the expected value of P along the tree species richness gradient (orange line).
+\end{enumerate}
+%
+Although we have introduced a way to estimate the uncertainty around the predicted relationship from the data by approximation in the previous section, we have not used it until the very end.
+
+
+\subsection{Stratified sampling of subsets}
+Each ecoregion has a certain share of the terrestrial surface, but within each ecoregion, not all area is forested. \citet{Crowther2015} provide estimates of the total land area as well as the number of trees for each ecoregion. We use the latter as means of stratification, i.e. draw plots proportional to the number of trees in that ecoregion. 
+%# add information on tree proportions and biome names to data set:
+%biome_trees <- cbind.data.frame(c(1,2,4:13),  c("tropMoist", "tropDry", "tempBroadleaf", "tempConifer", "boreal", "tropGrass", "tempGrass", "floodedGrass", "montaneGrass", "tundra", "MediterrForest", "desert"),  c(799.4, 156.4, 362.6, 150.6, 749.3, 318, 148.3, 64.6, 60.3, 94.9, 53.4, 53) ) # in billions of trees, from Crowther et al. 2015
+%colnames(biome_trees) <- c("Ecoregion", "biomeName", "nOfTrees")
+<<stratified sampling, cache=T, warning=F, messages=F>>=
+library(nlme)
+library(matrixStats)
+biome_trees$stratProb <- biome_trees$nOfTrees / sum(biome_trees$nOfTrees)
+bpr_data <- merge(bpr_data, biome_trees)  
+#head(bpr_data)  
+
+repeatedGLSstrat <- function(N=500){ # function running one stratified random subset GLS
+  # sample the Ecoregion-ID according to its probability:
+  ecoSample <- sample(biome_trees$Ecoregion, N, prob=biome_trees$stratProb, replace=T) # how many samples from all ecoregions
+  # table(ecoSample)
+  # Now, for each ecoregion, take a random subset from the full data set and rbind them:
+  subset <- NA
+  for (i in biome_trees$Ecoregion){
+    subs <- bpr_data[bpr_data$Ecoregion==i, ] # only this biome
+    subset2nd <- subs[subs$FID %in% sample(subs$FID, sum(ecoSample==i), replace={if (sum(ecoSample==i) > length(subs$FID)) TRUE else FALSE}), ] 
+    # sorry for this convoluted expression ...
+    subset <- rbind(subset, subset2nd)
+  }
+  subset <- subset[-1,] # remove the NA-row
+  # re-jitter geographical coordinates, if data points we resampled!
+  if (sum(ecoSample==i) > length(subs$FID)){ 
+    subset$lat <- jitter(subset$Lat)
+    subset$lon <- jitter(subset$Lon)
+  }
+  # Compute Sbreve as before and run GLS:
+  subset$Sbreve <- subset$S / max(subset$S)
+  fgls <- gls(log(P) ~ log(Sbreve) + G + T3 + C1 + C3 + PET + IAA + E, 
+              correlation=corSpher(c(50, 0.8), form=~lon+lat, nugget=T, fixed=F), 
+              data=subset)
+  r2 <- cor(predict(fgls), log(subset$P))^2 # R2
+  return( c(ell=logLik(fgls), AIC=AIC(fgls), BIC=BIC(fgls), R2=r2, coef(fgls)) )  
+}
+
+if ("coefMatStrat.Rdata" %in% dir()){
+  load("coefMatStrat.Rdata")
+} else {
+  set.seed(1234)
+  coefMatStrat <- t(replicate(50, repeatedGLSstrat() ))
+  save(coefMatStrat, file="coefMatStrat.Rdata")
+}
+signif(rbind(mean= colMeans(coefMatStrat), se=colSds(coefMatStrat) ) , 3)
+@
+<<plot stratified, out.width="0.49\\textwidth", fig.width=6, fig.height=6>>=
+load("coefMatStrat.Rdata")
+betaStrat <- coefMatStrat[, 5:13]
+# set all values but log(Sbreve) to their mean:
+#X <- as.matrix(data.frame("Intercept"=1, Sbreve=log(seq(0.01, 1, by=0.01)), 
+#            t(colMeans(bpr_data[, c("G", "T3", "C1", "C3", "PET", "IAA", "E")]))))
+predsStrat <- X %*% t(betaStrat)
+par(mar=c(5,4,1,1))
+plot(1:100, exp(rowMeans(predsStrat)), type="l", las=1, lwd=3, ylim=c(0, 10), 
+     xlab="relative species richness [%]", ylab="productivity", log="")
+# add standard model:
+lines(1:100, exp(rowMeans(preds)), lwd=3, col="red")
+#lines(1:100, exp(rowMeans(predsStrat)), lwd=3, col="white")
+legend("topleft", legend=c("Liang", "stratified"), col=c("red", "black"), lwd=2, lty=1, bty="n", cex=1.5)
+@
+The effect is moderate, with slightly lower values than the original non-stratified approach. This result suggests that also with non-stratified sampling always some tropical plots with high species richness are drawn, making the original \v{S} robust to unrepresentative sampling.
+
+
+\subsection{Compute distances between plots as Great Circle distances, rather than Euclidean (thereby accommodating the spherical nature of earth)}
+
+In the spatial model, the GLS, the distances between plots are computed from x-y-coordinates as Euclidean distance.\footnote{This is implicit in the \texttt{corSpher}-argument \citep{Pinheiro2000}. The different correlation structures (exponential, Gaussian, linear and spherical) describe \emph{how} the covariance between two locations decreases with their distance. Spherical, for example, is similar to exponential, but with a more linear shape.} On earth, the distance between two points cannot be computed as Euclidean distance, and instead requires the computation of the so-called Great Circle distance.\footnote{\url{https://en.wikipedia.org/wiki/Great-circle_distance}}
+
+We employ the ``halversine'' correlation structure provided on stackexchange to implement a correct distance measure within GLS.\footnote{Taken from \url{https://stackoverflow.com/questions/18857443/specifying-a-correlation-structure-for-a-linear-mixed-model-using-the-ramps-pack}.} We define the model and run it repeatedly.
+<<halversine setup>>=
+# Calculates the geodesic distance between two points specified by radian latitude/longitude using Haversine formula.
+# output in km
+haversine <- function(x0, x1, y0, y1) {
+  a <- sin( (y1 - y0)/2 )^2 + cos(y0) * cos(y1) * sin( (x1 - x0)/2 )^2
+  v <- 2 * asin( min(1, sqrt(a) ) )
+  6371 * v
+}
+
+# function to compute geodesic haversine distance given two-column matrix of longitude/latitude
+# input is assumed in form decimal degrees if radians = F
+# note fields::rdist.earth is more efficient
+haversineDist <- function(xy, radians = F) {
+  if (ncol(xy) > 2) stop("Input must have two columns (longitude and latitude)")
+  if (radians == F) xy <- xy * pi/180
+  hMat <- matrix(NA, ncol = nrow(xy), nrow = nrow(xy))
+  for (i in 1:nrow(xy) ) {
+    for (j in i:nrow(xy) ) {
+      hMat[j,i] <- haversine(xy[i,1], xy[j,1], xy[i,2], xy[j,2]) 
+    }
+  }
+  as.dist(hMat)
+}
+
+## for most methods, machinery from corSpatial will work without modification
+Initialize.corHaversine <- nlme:::Initialize.corSpatial
+recalc.corHaversine <- nlme:::recalc.corSpatial
+Variogram.corHaversine <- nlme:::Variogram.corSpatial
+corFactor.corHaversine <- nlme:::corFactor.corSpatial
+corMatrix.corHaversine <- nlme:::corMatrix.corSpatial
+coef.corHaversine <- nlme:::coef.corSpatial
+"coef<-.corHaversine" <- nlme:::"coef<-.corSpatial"
+
+## Constructor for the corHaversine class
+corHaversine <- function(value = numeric(0), form = ~ 1, mimic = "corSpher", nugget = FALSE, fixed = FALSE) {
+  spClass <- "corHaversine"
+  attr(value, "formula") <- form
+  attr(value, "nugget") <- nugget
+  attr(value, "fixed") <- fixed
+  attr(value, "function") <- mimic
+  class(value) <- c(spClass, "corStruct")
+  value
+}   # end corHaversine class
+environment(corHaversine) <- asNamespace("nlme")
+
+Dim.corHaversine <- function(object, groups, ...) {
+  if (missing(groups)) return(attr(object, "Dim"))
+  val <- Dim.corStruct(object, groups)
+  val[["start"]] <- c(0, cumsum(val[["len"]] * (val[["len"]] - 1)/2)[-val[["M"]]])
+  ## will use third component of Dim list for spClass
+  names(val)[3] <- "spClass"
+  val[[3]] <- match(attr(object, "function"), c("corSpher", "corExp", "corGaus", "corLin", "corRatio"), 0)
+  val
+}
+environment(Dim.corHaversine) <- asNamespace("nlme")
+
+
+## getCovariate method for corHaversine class
+getCovariate.corHaversine <- function(object, form = formula(object), data) {
+  if (is.null(covar <- attr(object, "covariate"))) {          # if object lacks covariate attribute
+    if (missing(data)) {                                    # if object lacks data
+      stop("need data to calculate covariate")
+    }
+    covForm <- getCovariateFormula(form)
+    if (length(all.vars(covForm)) > 0) {                    # if covariate present
+      if (attr(terms(covForm), "intercept") == 1) {       # if formula includes intercept
+        covForm <- eval(parse(text = paste("~", deparse(covForm[[2]]),"-1",sep="")))    # remove intercept
+      }
+      # can only take covariates with correct names
+      if (length(all.vars(covForm)) > 2) stop("corHaversine can only take two covariates, 'lon' and 'lat'")
+      if ( !all(all.vars(covForm) %in% c("lon", "lat")) ) stop("covariates must be named 'lon' and 'lat'")
+      covar <- as.data.frame(unclass(model.matrix(covForm, model.frame(covForm, data, drop.unused.levels = TRUE) ) ) )
+      covar <- covar[,order(colnames(covar), decreasing = T)] # order as lon ... lat
+    } else {
+      covar <- NULL
+    }
+    
+    if (!is.null(getGroupsFormula(form))) {                 # if groups in formula extract covar by groups
+      grps <- getGroups(object, data = data)
+      if (is.null(covar)) {
+        covar <- lapply(split(grps, grps), function(x) as.vector(dist(1:length(x) ) ) )  
+      } else {
+        giveDist <- function(el) {
+          el <- as.matrix(el)
+          if (nrow(el) > 1) as.vector(haversineDist(el))                       
+          else numeric(0)
+        }
+        covar <- lapply(split(covar, grps), giveDist )
+      }
+      covar <- covar[sapply(covar, length) > 0]  # no 1-obs groups
+    } 
+    else {                                  # if no groups in formula extract distance
+      if (is.null(covar)) {
+        covar <- as.vector(dist(1:nrow(data) ) )
+      } 
+      else {
+        covar <- as.vector(haversineDist(as.matrix(covar) ) )
+      }
+    }
+    if (any(unlist(covar) == 0)) {          # check that no distances are zero
+      stop("cannot have zero distances in \"corHaversine\"")
+    }
+  }
+  covar
+}   # end method getCovariate
+environment(getCovariate.corHaversine) <- asNamespace("nlme")
+@
+<<GLS haversine>>=
+set.seed(12)
+index <- sample(nrow(bpr_data), 500)
+subset <- bpr_data[index, ]
+subset$Sbreve <- subset$S / max(subset$S)
+fgls <- gls(log(P) ~ log(Sbreve) + G + T3 + C1 + C3 + PET + IAA + E, 
+              correlation=corHaversine(form=~lon+lat, mimic="corSpher"), 
+              data=subset)
+summary(fgls)
+@
+<<repeated GLS haversine>>=
+repeatedGLShaversine <- function(N=500){ # function running one random subset GLS
+  index <- sample(nrow(bpr_data), N)
+  subset <- bpr_data[index, ]
+  subset$Sbreve <- subset$S / max(subset$S)
+  fgls <- gls(log(P) ~ log(Sbreve) + G + T3 + C1 + C3 + PET + IAA + E, 
+              correlation=corHaversine(form=~lon+lat, mimic="corSpher"), 
+              data=subset)
+  r2 <- cor(predict(fgls), log(subset$P))^2 # R2
+  return( c(ell=logLik(fgls), AIC=AIC(fgls), BIC=BIC(fgls), R2=r2, coef(fgls)) )  
+}
+set.seed(123)
+coefMathaversine <- t(replicate(50, repeatedGLShaversine() ))
+library(matrixStats) # for colSds
+signif(rbind(mean= colMeans(coefMathaversine), se=colSds(coefMathaversine) ) , 3)
+@
+<<plot haversine, out.width="0.49\\textwidth">>=
+betahaversine <- coefMathaversine[, 5:13]
+predshaversine <- X %*% t(betahaversine)
+par(mar=c(5,4,1,1))
+plot(1:100, exp(rowMeans(predshaversine)), type="l", las=1, lwd=3, ylim=c(0, 10), 
+     xlab="relative species richness [%]", ylab="productivity", log="")
+# add standard model:
+lines(1:100, exp(rowMeans(preds)), lwd=3, col="red")
+legend("topleft", legend=c("Liang", "great circle"), col=c("red", "black"), lwd=2, lty=1, bty="n", cex=1.5)
+@
+In this case, the correct representation of spatial distances increases overall productivity estimates a bit, but leaves the TSP-P-relationship unchanged.
+
+
+
+\subsection{Define species richness relative to what is regionally possible}
+The definition of \v{S} in the subsets is relative to the largest value in the subset. When analysing the full data set, by the same logic, all tree species richness values are a fraction of the most diverse plot with 405 species. Thus, the reported relationship must be read as: ``If we increase whatever number of species we currently have in a plot to 400, then we are moving on this curve.'' 
+Ecologically, this makes no sense. Whatever the reason why there are only a handful species in a plot of 1/10th of a hectare in temperate and boreal forests, it also prevents a ``tropic richness'' in these sites. Thus, one cannot meaningfully increase species richness outside the tropics to a tropical level. As a consequence, the depicted figure lacks ecological interpretability.
+
+What the reader, and we suspect also some of the authors, probably interpret into the x-axis is ``species richness relative to what would be possible at this site''. There are different ways to define ``what is possible at this site'': (a) relative to what the maximum recorded value for this biome is, (b) relative to the richness of plots in the vicinity, (c) relative to the number of trees in the local/regional species pool, and possibly others. In the following, we use approach (b), relative to other plots in the region. The biome is, in our opinion, too large, while the third approach would require an analysis far beyond what current data allow us to do. 
+
+We define the ``region'' around a plot as being within a raster cell of 100 $\times$ 100 km$^2$.
+
+<<compute the local Sbreve, out.width="0.49\\textwidth", message=FALSE>>=
+library(raster)
+library(sp)
+# do everything in equal-area Mollweide projection:
+prj <- "+proj=moll +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84"
+# set up a raster grid for the world:
+wrld_moll <- spTransform(wrld_simpl, CRS=prj)
+wrld_moll_raster <- raster(wrld_moll, res=100000)
+# transform plot coordinates into Mollweide:
+plots <- SpatialPoints(coords=bpr_data[, c("Lon", "Lat")], proj4string=crs(wrld_simpl))
+plots_moll <- spTransform(plots, CRS=prj)
+# rasterise the data into it:
+bpr_moll_raster <- rasterize(x=plots_moll, y=wrld_moll_raster, field=bpr_data$S, fun=max)
+bpr_moll_raster
+# plot(bpr_moll_raster) # check
+# extract Smax of the cell into which a plot falls
+SmaxPerPlot <- extract(bpr_moll_raster, plots_moll)
+SbreveLocal <- bpr_data$S / SmaxPerPlot
+bpr_data$SbreveLocal <- SbreveLocal
+
+#plot(bpr_data$S/max(bpr_data$S), bpr_data$SbreveLocal, pch=".", cex=2) #slow!
+library(hexbin)
+plot(hexbin(bpr_data$S/max(bpr_data$S), bpr_data$SbreveLocal))
+@
+The local relative species richness (\v{S}$_\text{local}$) shows substantially more variability for low-richness plots.
+
+Now we can repeat the above analysis with a different relative tree species richness as response:
+<<GLS for local Sbreve>>=
+repeatedGLSlocalSbreve <- function(N=500){ # function running one random subset GLS
+  index <- sample(nrow(bpr_data), N)
+  subset <- bpr_data[index, ]
+  fgls <- gls(log(P) ~ log(SbreveLocal) + G + T3 + C1 + C3 + PET + IAA + E, 
+              correlation=corSpher(c(50, 0.8), form=~lon+lat, nugget=T, fixed=T), 
+              data=subset)
+  r2 <- cor(predict(fgls), log(subset$P))^2 # R2
+  return( c(ell=logLik(fgls), AIC=AIC(fgls), BIC=BIC(fgls), R2=r2, coef(fgls)) )  
+}
+set.seed(123)
+coefMatlocalSbreve <- t(replicate(50, repeatedGLSlocalSbreve() ))
+library(matrixStats) # for colSds
+signif(rbind(mean= colMeans(coefMatlocalSbreve), se=colSds(coefMatlocalSbreve) ) , 3)
+@
+<<plot local Sbreve, out.width="0.49\\textwidth">>=
+betalocalSbreve <- coefMatlocalSbreve[, 5:13]
+predslocalSbreve <- X %*% t(betalocalSbreve)
+par(mar=c(5,4,1,1))
+plot(1:100, exp(rowMeans(predslocalSbreve)), type="l", las=1, lwd=3, ylim=c(0, 10), 
+     xlab="relative species richness [%]", ylab="productivity", log="")
+# add standard model:
+lines(1:100, exp(rowMeans(preds)), lwd=3, col="red")
+legend("topleft", legend=c("Liang", "local relative richness"), col=c("red", "black"), lwd=2, lty=1, bty="n", cex=1.5)
+@
+Representing species richness relative to what is possible in that region substantially reduces the effect of species richness on productivity, as well as the error margin of this relationship.
+
+To repeat the message of this last plot: When moving from a plot that only comprises, say, 10\% of the potential local tree species to one that contains all 100\%, productivity increases from around 2.2 to 4.5 m$^3$ha$^{-1}$y$^{-1}$ (much less than the increase from 2.5 to 8 m$^3$ha$^{-1}$y$^{-1}$ reported by \citealt{Liang2016}).
+
+
+
+\subsection{Use relative, rather than absolute, productivity}
+It appears a bit odd to scale species richness relativ to what is locally possible, but not also productivity. Tropical forests can be expected to be far more productive than boreal ones, but the effect of relative species richness on \emph{relative} productivity may be similar.
+
+To explore this idea, we follow the same approach as with local relative species richness and compute local relative productivity, P$_\text{local}$. This we then analyse with the local relative species richness (\v{S}$_\text{local}$).
+
+Again we define the ``region'' around a plot as being within a raster cell of 100 $\times$ 100 km$^2$.
+
+<<compute the local P, out.width="0.49\\textwidth">>=
+library(raster)
+library(maptools)
+data(wrld_simpl)
+# do everything in equal-area Mollweide projection:
+prj <- "+proj=moll +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84"
+# set up a raster grid for the world:
+wrld_moll <- spTransform(wrld_simpl, CRS=prj)
+wrld_moll_raster <- raster(wrld_moll, res=100000)
+# transform plot coordinates into Mollweide:
+plots <- SpatialPoints(coords=bpr_data[, c("Lon", "Lat")], proj4string=crs(wrld_simpl))
+plots_moll <- spTransform(plots, CRS=prj)
+# rasterise the data into it:
+bpr_moll_raster <- rasterize(x=plots_moll, y=wrld_moll_raster, field=bpr_data$P, fun=max)
+bpr_moll_raster
+# plot(bpr_moll_raster) # check
+# extract Smax of the cell into which a plot falls
+PmaxPerPlot <- extract(bpr_moll_raster, plots_moll)
+PLocal <- bpr_data$P / PmaxPerPlot
+bpr_data$PLocal <- PLocal
+
+library(hexbin)
+plot(hexbin(bpr_data$P/max(bpr_data$P), bpr_data$PLocal))
+@
+
+Now we can repeat the above analysis with a different relative (local) productivity as response:
+<<GLS for local P>>=
+repeatedGLSlocalP <- function(N=500){ # function running one random subset GLS
+  index <- sample(nrow(bpr_data), N)
+  subset <- bpr_data[index, ]
+  fgls <- gls(log(PLocal) ~ log(SbreveLocal) + G + T3 + C1 + C3 + PET + IAA + E, 
+              correlation=corSpher(c(50, 0.8), form=~lon+lat, nugget=T, fixed=T), 
+              data=subset)
+  r2 <- cor(predict(fgls), log(subset$P))^2 # R2
+  return( c(ell=logLik(fgls), AIC=AIC(fgls), BIC=BIC(fgls), R2=r2, coef(fgls)) )  
+}
+set.seed(123)
+coefMatlocalP <- t(replicate(50, repeatedGLSlocalP() ))
+library(matrixStats) # for colSds
+signif(rbind(mean= colMeans(coefMatlocalP), se=colSds(coefMatlocalP) ) , 3)
+@
+<<plot local P, out.width="0.49\\textwidth">>=
+#plot(hexbin(log10(bpr_data$S), log10(bpr_data$PLocal)))
+#plot(hexbin(bpr_data$S/405, bpr_data$PLocal))
+betalocalP <- coefMatlocalP[, 5:13]
+predslocalP <- X %*% t(betalocalP)
+par(mar=c(5,4,1,1))
+plot(1:100, exp(rowMeans(predslocalP)), type="l", las=1, lwd=3, ylim=c(0, .12), 
+     xlab="relative species richness [%]", ylab="relative local productivity", log="")
+@
+This does not look like an improvement, as the model fit is poorer (R$^2$ of 0.135 compared to 0.34). Interestingly, however, (a) the effect of species richness is stronger (larger value of $\theta$); and (b) even at maximal species richness only 10\% of maximal productivity is reached.
+
+Note that we used the \emph{local} relative species richness (\v(S)$_\text{local}$); the model with the original \v{S} is similarly bad, and with a lower value for $\theta$ (around 0.213). While this may actually be interesting in itself, we do not pursue this line of thought further here.
+
+\section{A new analysis}
+In summary, our explorations above have shown substantial effects of (in that order) 
+\begin{enumerate}
+\item computing \v{S} relative to maximal \emph{local} species richness;
+\item stratifying the data proportional to an ecoregion's share of global forest cover; 
+\item computing spatial distances on a sphere;
+\item stratification of samples by ecoregion forest cover;
+\item correcting for spatial autocorrelation;
+\item correcting standard errors for subsampling.
+\end{enumerate}
+The relative scaling of productivity did not improve the global model and is not further considered here.
+
+It is quite possible that these alterations of the original model interact, i.e. that the substantial bias we have seen introduced by stratification may be caused by the way \v{S} is computed, and would be removed with a locally computed \v{S}$_\text{local}$. Exploring \emph{all} these option combinations is beyond the scope of this re-analysis.
+
+%All the above modifications affect the position of the mean line. Computing correct standard errors for subsamping data.
+
+So, in a nutshell, the \emph{new global model} uses a locally-scaled species richness as predictor, computes spatial distances on a sphere when correcting for spatial autocorrelation in the data and stratifies sampling by each ecoregion's forest cover. 
+
+<<GLS new model>>=
+repeatedGLSnew <- function(N=500){ # function running one stratified random subset GLS
+  # sample the Ecoregion-ID according to its probability:
+  ecoSample <- sample(biome_trees$Ecoregion, N, prob=biome_trees$stratProb, replace=T) # how many samples from all ecoregions
+  # table(ecoSample)
+  # Now, for each ecoregion, take a random subset from the full data set and rbind them:
+  subset <- NA
+  for (i in biome_trees$Ecoregion){
+    subs <- bpr_data[bpr_data$Ecoregion==i, ] # only this biome
+    subset2nd <- subs[subs$FID %in% sample(subs$FID, sum(ecoSample==i), replace={if (sum(ecoSample==i) > length(subs$FID)) TRUE else FALSE}), ] 
+    # sorry for this convoluted expression ...
+    subset <- rbind(subset, subset2nd)
+  }
+  subset <- subset[-1,] # remove the NA-row
+  # re-jitter geographical coordinates, if data points we resampled!
+  if (sum(ecoSample==i) > length(subs$FID)){ 
+    subset$lat <- jitter(subset$Lat)
+    subset$lon <- jitter(subset$Lon)
+  }
+fgls <- gls(log(P) ~ log(SbreveLocal) + G + T3 + C1 + C3 + PET + IAA + E, 
+              correlation=corHaversine(form=~lon+lat, mimic="corSpher"), 
+              data=subset)
+  r2 <- cor(predict(fgls), log(subset$P))^2 # R2
+  return( c(ell=logLik(fgls), AIC=AIC(fgls), BIC=BIC(fgls), R2=r2, coef(fgls)) )  
+}
+set.seed(123)
+coefMatNew <- t(replicate(50, repeatedGLSnew() ))
+signif(rbind(mean=colMeans(coefMatNew), se=colSds(coefMatNew) ) , 3)
+@
+Here we add the correction for subsampling, specifically computing SDs of the predictions from the subsamples and correcting them to the full data. We first do that for the fits provided by the re-analysis in the original form.
+<<CI correction of Liang fit>>=
+predsMeansGLS <- rowMeans(preds)
+CIsdGLS <- apply(preds, 1, sd)
+CIsdGLScorr <- exp(2.341*log(CIsdGLS))
+CIsGLS <- rbind(predsMeansGLS + 2 * CIsdGLScorr, predsMeansGLS - 2 * CIsdGLScorr)
+@
+Now we plot the new model, and as comparison the original.
+<<plot new model, out.width="0.49\\textwidth", cache=F>>=
+betaNew <- coefMatNew[, 5:13]
+predsNew <- X %*% t(betaNew)
+predsMeans <- rowMeans(predsNew)
+CIsd <- apply(predsNew, 1, sd)
+CIsdcorr <- exp(2.341*log(CIsd))
+CIsNew <- rbind(predsMeans + 2 * CIsdcorr, predsMeans - 2 * CIsdcorr)
+
+par(mar=c(5,4,1,1))
+plot(1:100, exp(rowMeans(predsNew)), type="l", las=1, lwd=3, ylim=c(0, 10), 
+    xlab="relative local species richness [%]", ylab="productivity", log="")
+polygon(c(1:100, 100:1), c(exp(CIsNew[1,]), rev(exp(CIsNew[2,]))), border="green", col="green")
+# add standard model:
+polygon(c(1:100, 100:1), c(exp(CIsGLS[1,]), rev(exp(CIsGLS[2,]))), border=NA, col=rgb(255, 165, 0, 100, maxColorValue = 255))
+lines(1:100, exp(predsMeansGLS), lwd=1)
+lines(1:100, exp(predsMeans), lwd=1, col="white")
+@
+As we can clearly see, the pattern observed by \citet{Liang2016} does not hold up to scrutiny when correcting the mistakes of their analysis. The overall effect of increasing species richness to the maximum possible at that site is negligible and levels off at less than 10\%.\footnote{As written above, it is probably in the interaction of the changes that the effect disappears. Changing, for example, the Haversine back to corSpher has hardly any effect in itself. One could now start to remove the changes one at a time to identify the step(s) that caused the original signal to disappear.}
+
+The absolute levels of productivity presented in the above figure are conditional on the values choosen for environmental covariates and are thus not interpretable ``globally''. To do so would require a marginal, rather than a conditional approach. As already the conditional effect at the mean value of the covariates is practically absent, so would probably be the marginal.\footnote{The marginal effect asks the question: ``I'm in a forest somewhere on this planet. I know that this plot has 50\% of its potential tree species richness. How productive is this plot?'' In other words, the marginal effect is ignorant of the values of the environmental covariates, and as a consequences is far less certain. The conditional effect (``I'm standing in a forest patch in north Sumatra, with that much rainfall, tree density and so forth, and tree species richness is at 50\% of its maximum potential: How productive is this site?'') obviously requires more information, but is thereby, by definition, not global anymore.}
+Although that was one of our initial questions, it is not worth pursuing under these conditions.
+
+
+\section{Comparison with ecoregion-specific fits}
+The lack of species richness-effect begs the question whether \emph{within} ecoregions such a species richness-effect is present. It could well be that the variation in species-richness effects across ecoregions leads to a dilution of this signal at the global scale and the overall lack of effect in the full analysis.
+
+We thus recompute with the same approach the fits to each ecoregion separately.
+
+<<analysis per ecoregion, warning=FALSE, message=FALSE>>=
+repeatedGLSbiome <- function(N=500, data=NULL){ # function running random subset GLS
+  # take subset
+  subset <- data[sample(nrow(data), min(N, nrow(data))),]
+  # fit model
+  fgls <- try(gls(log(P) ~ log(SbreveLocal) + G + T3 + C1 + C3 + PET + IAA + E,
+              correlation=corHaversine(form=~lon+lat, mimic="corSpher"), 
+              data=subset))
+  if (inherits(fgls, "try-error")) {
+    return(rep(NA, 13)) 
+  } else {
+    r2 <- cor(predict(fgls), log(subset$P))^2 # R2
+    return( c(ell=logLik(fgls), AIC=AIC(fgls), BIC=BIC(fgls), R2=r2, coef(fgls)) )
+  }
+}
+
+regionalFits <- list()
+set.seed(123)
+for (i in c(1, 2, 4:10, 12, 13)){#3: no data; 11: only 9 data points
+  # select region:
+  thisEcoregion <- bpr_data[bpr_data$Ecoregion == i, ]
+  # fit new model:
+  coefMatNew <- t(replicate(500, repeatedGLSbiome(N=500, data=thisEcoregion) ))
+  regionalFits[[i]] <- coefMatNew
+  cat(i, " "); rm(coefMatNew)
+}
+@
+%save.image(file="LiangReanalysis_workspace.Rdata")
+
+<<summarise regional theta estimates, warning=FALSE>>=
+thetamat <- sapply(regionalFits, function(x) c(mean(x[,6], na.rm=T), sd(x[,6], na.rm=T)))
+@
+
+<<plot by region, tidy=FALSE, fig.width=8 >>=
+sampleSize <- table(bpr_data$Ecoregion)
+par(mar=c(3,3,0,1), mfrow=c(3,4), oma=c(4,4,0,0))
+for (i in c(1,2,4:10,12,13)){
+  XReg <- as.matrix(data.frame("Intercept"=1, "SbreveLocal"=log(seq(0.01, 1, by=0.01)), 
+      t(colMeans(bpr_data[bpr_data$Ecoregion == i, c("G", "T3", "C1", "C3", "PET", 
+      "IAA", "E")]))))
+  if (i %in% c(2, 9)){
+    # Ecoregion 2 has only 111 plots, 9: 547; here we use the full model!
+    subSet <- bpr_data[bpr_data$Ecoregion == i, -c(2,6)]
+    # apparently predictSE cannot handle the log() in a formula:
+    subSet$logSbreveLocal <- log(subSet$SbreveLocal)
+    fglsReg <- nlme::gls(log(P) ~ logSbreveLocal + G + T3 + C1 + C3 + PET + IAA + E,
+              correlation=corHaversine(form=~lon+lat, mimic="corSpher"), 
+              data=subSet)
+    thetamat[,2] <- c(coef(fglsReg)["logSbreveLocal"], 
+              sqrt(diag(summary(fglsReg)$varBeta))["logSbreveLocal"] )
+    # somehow knitr didn't like this line:
+    #XReg <- as.matrix(data.frame("logSbreveLocal"=log(seq(0.01, 1, by=0.01)),
+    #                t(colMeans(subSet))))
+    XReg <- as.matrix(data.frame("logSbreveLocal"=log(seq(0.01, 1, by=0.01)),
+                "G"=mean(subSet$G), "T3"=mean(subSet$T3), "C1"=mean(subSet$C1), 
+                "C3"=mean(subSet$C3), "PET"=mean(subSet$PET), 
+                "IAA"=mean(subSet$IAA), "E"=mean(subSet$E)))
+    predsReg <- AICcmodavg:::predictSE(fglsReg, newdata=XReg, se.fit=T)
+    predsRegMeans <- predsReg$fit
+    CIsdcorrReg <- predsReg$se.fit # no need to correct
+  } else {
+    betaReg <- regionalFits[[i]][, 5:13]
+    predsReg <- XReg %*% t(betaReg)
+    predsRegMeans <- rowMeans(predsReg, na.rm=T)
+    CIsdReg <- apply(predsReg, 1, sd, na.rm=T)
+    CIsdcorrReg <- exp(log(500) / log(sampleSize[names(sampleSize) == i]) * log(CIsdReg))
+  }
+  CIsNewReg <- rbind(predsRegMeans + 2 * CIsdcorrReg, predsRegMeans - 2 * CIsdcorrReg)
+  ylimUpper <- ceiling(exp(max(CIsNewReg)))
+  plot(1:100, exp(predsRegMeans), type="n", las=1, ylim=c(0, ylimUpper), 
+    #xlab="relative local species richness [%]", ylab="productivity", log="",
+    main="", xlab="", ylab="")
+  polygon(c(1:100, 100:1), c(exp(CIsNewReg[1,]), rev(exp(CIsNewReg[2,]))), 
+          border=cols[i], col=cols[i])
+  lines(1:100, exp(predsRegMeans), lwd=3)
+  legend("topleft", legend=biome_trees$biomeName[biome_trees$Ecoregion == i],
+         bty="n", cex=1)
+}
+mtext(side=1, text="relative local tree species richness", cex=1.5, line=1, outer=T)
+mtext(side=2, text=expression(paste("productivity [", m^{3} ~~ ha^{-1} ~~ y^{-1}, "]")), 
+      cex=1.5, line=1, outer=T, las=0)
+@
+As a summary, we can plot the estimates for each ecoregion. 
+<<plot regional theta estimates, out.width="0.5\\textwidth">>=
+thetamat <- as.data.frame(thetamat[,-c(3,11)])
+colnames(thetamat) <- as.character(biome_trees$biomeName[-c(10)]) # "tundra" excluded
+rownames(thetamat) <- c("theta", "se")
+par(mar=c(5,5,1,1), las=1)
+plot(1:11, thetamat[1, ], pch=16, ylim=c(-.2, .8), ylab=expression(hat(theta)), xlab="", axes=F)
+abline(h=0, col="grey")
+abline(h=0.07, col="green")
+abline(h=0.262, col="red")
+arrows(1:11, unlist(thetamat[1, ] - 2*thetamat[2, ]), 1:11,  unlist(thetamat[1, ] + 2*thetamat[2, ]), angle=90, code=3, length=0.2)
+axis(2)
+axis(1, tick=F, at=1:11, labels=colnames(thetamat), las=3, line=-2)
+@
+In six out of 11 cases (tropical moist rainforest, temperate coniferous forest, temperate grassland, mountain grassland, Mediterranean forest and desert) the estimates are not significant. All others point at positive effects of relative local species richness of rather different strength (very strong in tropical dry rainforests and flooded grasslands). The original global model of \citet{Liang2016} (in red) shows a substantially stronger effect than our re-analysis (green).
+
+
+\subsection{Analysis with actual species richness as predictor}
+One of the interpretational problems of the above analyses, and indeed the key neat idea of the original paper, is that a change from, say, 10 to 30\% on the x-axis means completely different things in different ecoregions. In the tropics, this may be a change in species richness from 30 to 90 species, while in the boreal system from ``less than one'' to ``just under two''.
+
+As a final step, we re-analyse the data with the same model as in the previous section, just with log(S) as predictor, rather than a somehow corrected species richness.
+
+<<analysis with S per ecoregion, warning=FALSE, message=FALSE>>=
+repeatedGLSbiomeS <- function(N=500, data=NULL){ # function running random subset GLS
+  # take subset
+  subset <- data[sample(nrow(data), min(N, nrow(data))),]
+  # fit model
+  fgls <- try(gls(log(P) ~ log(S) + G + T3 + C1 + C3 + PET + IAA + E,
+              correlation=corHaversine(form=~lon+lat, mimic="corSpher"), data=subset))
+  if (inherits(fgls, "try-error")) {
+    return(rep(NA, 13)) 
+  } else {
+    r2 <- cor(predict(fgls), log(subset$P))^2 # R2
+    return( c(ell=logLik(fgls), AIC=AIC(fgls), BIC=BIC(fgls), R2=r2, coef(fgls)) )
+  }
+}
+
+regionalFitsS <- list()
+set.seed(123)
+for (i in c(1, 2, 4:10, 12, 13)){#3: no data; 11: only 9 data points
+  # select region:
+  thisEcoregion <- bpr_data[bpr_data$Ecoregion == i, ]
+  # fit new model:
+  coefMatNewS <- t(replicate(50, repeatedGLSbiomeS(N=500, data=thisEcoregion) ))
+  regionalFits[[i]] <- coefMatNewS
+  cat(i, " "); rm(coefMatNewS)
+}
+@
+
+<<summarise regional theta estimates by S, warning=FALSE>>=
+thetamatS <- sapply(regionalFits, function(x) c(mean(x[,6], na.rm=T), sd(x[,6], na.rm=T)))
+thetamatS
+@
+
+<<plot by region with S, tidy=FALSE, fig.width=8, eval=T >>=
+sampleSize <- table(bpr_data$Ecoregion)
+par(mar=c(3,3,0,1), mfrow=c(3,4), oma=c(4,4,0,0))
+for (i in c(1,2,4:10,12,13)){
+  XReg <- as.matrix(data.frame("Intercept"=1, 
+      "S"=log(seq(1, max(bpr_data$S[bpr_data$Ecoregion == i]), by=1)), 
+      t(colMeans(bpr_data[bpr_data$Ecoregion == i, c("G", "T3", "C1",
+        "C3", "PET", "IAA", "E")]))))
+  if (i %in% c(2, 9)){
+    # Ecoregion 2 has only 111 plots, 9: 547; here we use the full model!
+    subSet <- bpr_data[bpr_data$Ecoregion == i, -c(2,6)]
+    # apparently predictSE cannot handle the log() in a formula:
+    subSet$logS <- log(subSet$S)
+    fglsReg <- nlme::gls(log(P) ~ logS + G + T3 + C1 + C3 + PET + IAA + E,
+              correlation=corHaversine(form=~lon+lat, mimic="corSpher"), 
+              data=subSet)
+    thetamatS[,2] <- c(coef(fglsReg)["logS"], sqrt(diag(summary(fglsReg)$varBeta))["logS"] )
+    XReg <- as.matrix(data.frame("logS"=log(seq(1, max(subSet$S), by=1)),
+                "G"=mean(subSet$G), "T3"=mean(subSet$T3), "C1"=mean(subSet$C1), 
+                "C3"=mean(subSet$C3), "PET"=mean(subSet$PET), 
+                "IAA"=mean(subSet$IAA), "E"=mean(subSet$E)))
+    predsRegS <- AICcmodavg:::predictSE(fglsReg, newdata=XReg, se.fit=T)
+    predsRegMeansS <- predsRegS$fit
+    CIsdcorrRegS <- predsRegS$se.fit # no need to correct
+    Smax <- max(subSet$S)
+  } else {
+    Smax <- max(bpr_data$S[bpr_data$Ecoregion == i])
+    betaReg <- regionalFits[[i]][, 5:13]
+    predsRegS <- XReg %*% t(betaReg)
+    predsRegMeansS <- rowMeans(predsRegS, na.rm=T)
+    CIsdRegS <- apply(predsRegS, 1, sd, na.rm=T)
+    CIsdcorrRegS <- exp(log(500) / log(sampleSize[names(sampleSize) == i]) * log(CIsdRegS))
+  }
+  CIsNewRegS <- rbind(predsRegMeansS + 2 * CIsdcorrRegS, predsRegMeansS - 2 * CIsdcorrRegS)
+  ylimUpper <- ceiling(exp(max(CIsNewRegS)))
+  plot(1:Smax, exp(predsRegMeansS), type="n", las=1, ylim=c(0, ylimUpper), 
+       main="", xlab="", ylab="")
+  polygon(c(1:Smax, Smax:1), c(exp(CIsNewRegS[1,]), rev(exp(CIsNewRegS[2,]))), 
+          border=cols[i], col=cols[i])
+  lines(1:Smax, exp(predsRegMeansS), lwd=3)
+  legend("topleft", legend=biome_trees$biomeName[biome_trees$Ecoregion == i], bty="n", cex=1)
+}
+mtext(side=1, text="absolute tree species richness", cex=1.5, line=1, outer=T)
+mtext(side=2, text=expression(paste("productivity [", m^{3} ~~ ha^{-1} ~~ y^{-1}, "]")), 
+      cex=1.5, line=1, outer=T, las=0)
+thetamatS
+@
+As a summary, we can plot the estimates and their 95\%-confidence interval for each ecoregion. 
+<<plot regional theta estimates with S, out.width="0.5\\textwidth", eval=T, cache=T, warning=F>>=
+thetamatS <- as.data.frame(thetamatS[,-c(3,11)])
+colnames(thetamatS) <- as.character(biome_trees$biomeName[-c(10)]) # "tundra" excluded
+rownames(thetamatS) <- c("theta", "se")
+par(mar=c(5,5,1,1), las=1)
+plot(1:11, thetamatS[1, ], pch=16, ylim=c(-.2, .8), ylab=expression(hat(theta)[S]), xlab="", axes=F)
+abline(h=0, col="grey")
+arrows(1:11, unlist(thetamatS[1, ] - 2*thetamatS[2, ]), 1:11,  unlist(thetamatS[1, ] + 2*thetamatS[2, ]), angle=90, code=3, length=0.2)
+axis(2)
+axis(1, tick=F, at=1:11, labels=colnames(thetamatS), las=3, line=-2)
+@
+We see that in almost all ecoregions higher tree species richness is correlated with higher productivity. We also see the common pattern of a quick decrease of a distinguishable diversity effect beyond a few species (in tropical moist forests, ``few'' in this case means a few dozen, while in all other systems ``few'' means less than 10).\footnote{These curves are not identical to those from the previous analysis with relative local species richness, as the re-scaling of the x-axis is non-linear: species richness enters the model after log-transformation, thereby also affecting estimation of $\theta$.}
+
+
+\subsection{Tree species richness effects of only a few species (suggested by Bernhard Schmid)}
+Neither the original relative tree richness of Liang et al., nor our local version are particularly satisfactory. One interesting hypothesis would be if the effect of adding a tree species is the same in all systems, but \emph{look only at the first few species}. Irrespective of why the tropics have hundreds of species, going from monoculture to two, three, four species may have very similar effects there and in the boreal zone. In personal communication, Bernhard Schmid, of the original authors, suggested to maybe only look at those plots with up to a few tree species with this analysis.
+
+So, in this analysis, we run an analysis of the effect of S on P, separately for each ecoregion, plots with S > $k$ are excluded (and we'll vary $k$ from 5 to 10), using the OLS rather than the GLS (because it makes relatively little difference and we can then use the entire data set).
+<<ecoregion few species analysis>>=
+k=10
+regionalFitsfewS <- list()
+set.seed(123)
+for (i in c(1, 2, 4:10, 12, 13)){#3: no data; 11: only 9 data points
+  # select region:
+  thisEcoregion <- bpr_data[bpr_data$Ecoregion == i & bpr_data$S <= k, ]
+  #print(paste("Ecoregion", i, "with", nrow(thisEcoregion), "data points."))
+  fm <- lm(log(P) ~ log(S) + G + T3 + C1 + C3 + PET + IAA + E, data=thisEcoregion)
+  regionalFitsfewS[[i]] <- fm
+}
+@
+<<plot regionalFitsfewS>>=
+par(mar=c(5,5,1,1))
+plot(bpr_data$S, bpr_data$P, type="n", xlim=c(1, k), ylim=c(1e-10, 1000), las=1, log="xy", xlab="number of tree species", ylab=expression(paste("productivity [", m^{3} ~~ ha^{-1} ~~ y^{-1}, "]")))
+
+for (i in c(1, 2, 4:10, 12, 13)){#3: no data; 11: only 9 data points
+  XReg <- data.frame("S"=(seq(1, k, by=.1)),
+                "G"=mean(thisEcoregion$G), "T3"=mean(thisEcoregion$T3), "C1"=mean(thisEcoregion$C1), 
+                "C3"=mean(thisEcoregion$C3), "PET"=mean(thisEcoregion$PET), 
+                "IAA"=mean(thisEcoregion$IAA), "E"=mean(thisEcoregion$E))
+  preds <- predict(regionalFitsfewS[[i]], newdata=XReg, se.fit=T)
+  lines(XReg$S, exp(preds$fit), col=cols[i], lwd=3)
+  lines(XReg$S, exp(preds$fit + 2*preds$se.fit), col=cols[i], lwd=1, lty=2)
+  lines(XReg$S, exp(preds$fit - 2*preds$se.fit), col=cols[i], lwd=1, lty=2)
+}
+grid()
+abline(h=c(.1, 100), col="grey")
+@
+As we can see, on a log-log plot, the absolute productivity is covering a range of 11 orders of magnitude (from essentially 0 to an unrealistic several hundred m$^3$ha$^{-1}$a$^{-1}$). The slopes cannot be really judged well visually in this case. 
+
+<<plot regionalFitsfewS with CIs>>=
+par(mar=c(5,5,1,1))
+plot(bpr_data$S, bpr_data$P, type="n", xlim=c(1, k), ylim=c(1e-1, 300), las=1, log="xy", xlab="number of tree species", ylab=expression(paste("productivity [", m^{3} ~~ ha^{-1} ~~ y^{-1}, "]")))
+
+for (i in c(1, 2, 4:10, 12, 13)){#3: no data; 11: only 9 data points
+  XReg <- data.frame("S"=(seq(1, k, by=.1)),
+                "G"=mean(thisEcoregion$G), "T3"=mean(thisEcoregion$T3), "C1"=mean(thisEcoregion$C1), 
+                "C3"=mean(thisEcoregion$C3), "PET"=mean(thisEcoregion$PET), 
+                "IAA"=mean(thisEcoregion$IAA), "E"=mean(thisEcoregion$E))
+  preds <- predict(regionalFitsfewS[[i]], newdata=XReg, se.fit=T)
+  lines(XReg$S, exp(preds$fit), col=cols[i], lwd=3)
+  lines(XReg$S, exp(preds$fit + 2*preds$se.fit), col=cols[i], lwd=1, lty=2)
+  lines(XReg$S, exp(preds$fit - 2*preds$se.fit), col=cols[i], lwd=1, lty=2)
+}
+grid()
+legend("topleft", legend=biome_trees$biomeName[biome_trees$Ecoregion %in% c(1, 2, 4:10, 12, 13)],
+         bty="n", cex=1, col=cols[c(1, 2, 4:10, 12, 13)], lwd=3)
+@
+Zooming in to the higher productivities, all but two lines are statistically significantly increasing (tropical moist, in red; and montane grassland, in dark blue.“). 
+<<eval=F, echo=T>>=
+sapply(regionalFitsfewS, summary) 
+@
+
+
+
+\section{Conclusion}
+The ``global'' relationship between ``relative tree species richness'' and productivity reported by \citet{Liang2016} hinges on an analysis with several logical and technical flaws. Removing them yields essentially a flat line and no such global relationship. It is entirely possible that there are mistakes in the above analysis, and that is why we provide this document.\footnote{Note that some steps require substantial computing time (all those running a model often).}
+
+This relationship is \emph{not} globally consistent; rather, ecosystems vary substantially, but most show a positive tree-species richness-productivity relationship. Analysing the data with a relative species richness axis provides no benefit or insight when compared to absolute species richnes analyses.
+
+
+\setlength{\bibsep}{0cm}
+\def\bibfont{\small}
+
+\bibliographystyle{mee} %all show doi, url, isbn; haven't found out yet how to switch that off without altering the mee.sty itself
+\bibliography{references}
+%\bibliography{~/Dropbox/Carsten/CFD_library}
+
+
+
+\end{document}
