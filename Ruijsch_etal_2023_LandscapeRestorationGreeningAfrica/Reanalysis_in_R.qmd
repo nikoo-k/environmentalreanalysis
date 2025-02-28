@@ -1,0 +1,4186 @@
+---
+title: "Did Changes in GEE Impact Final Results?" 
+subtitle: "Recalculating P-values, Mean, and SE (Figure 3 B) to Evaluate the Effects of GEE Adjustments"
+toc: true
+format:  
+  html:
+    fig-width: 4
+    fig-height: 4
+    fig-align: center
+    fig-show: 'hold'
+number-sections: true
+pdf-engine: pdflatex
+editor: source
+geometry:
+  - top=20mm
+  - left=20mm
+  - bottom=20mm
+  - right=20mm
+monofont: 'Menlo'
+mainfont: 'Baskerville'
+monofontoptions: 
+  - Scale=0.8
+execute: 
+  cache: true
+knitr:
+  opts_chunk:
+    tidy: false
+    warning: false
+---
+
+```{r}
+#| warning: false
+#| echo: false
+
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(tibble)
+library(patchwork)
+library(reticulate)
+library(purrr)
+library(xtable)
+library(terra)
+```
+
+```{r}
+#| include: false
+
+# setwd("~/Uni/Master/Semester_3/capstone/africa")
+setwd("~/PERSISTENT/capstone/")
+# setwd("C:/Users/Nutzer/Documents/Capstone")
+
+
+# py_install("pandas")
+# use_python("~/anaconda3/bin/python", required = TRUE)
+# use_python("C:/Users/andre/anaconda3/python.exe", required = TRUE)
+
+```
+
+
+```{python}
+import pandas as pd
+import os
+```
+
+# Introduction
+
+This document reanalysis the study *Landscape restoration and greening in Africa* by Jessica Ruijsch et al 2023 published in Environ. Res. Lett. 18 064020. The main analysis-pipeline of the study is mostly based on 6 *Google Earth Engine (GEE)*, which we have extended (for details see GEE_scripts). The purpose of this document is to evaluate whether our extensions alter the final results. In the first section we reproduce the T test, mean and SE values of the share of local greening around the Each of the four main sections addresses one extension, except for Section I), which additionally reproduces the metrics used for comparison in the assessment:
+<br> I) Reproduction of study results
+<br> II) Masking out SLM when calculating the mean share of local greening in the combined region 
+<br> III) Use NIRv and NDVI instead of EVI and NDVI
+<br> IV) Use MODIS061 Data instead of MODIS006
+
+**Verweis auf Latex Test, in dem die Studie beschrieben wird**: For an general overview on the whole reproduction process of . see Ruijsch et al. (2023) capstone_doukument_niko_nick_andy. There, it is also described how and why we changed the GEE scripts in more detail. This document analyses the results from the GEE, specifically it aims to
+<br> 1) reproduce the mean and standard error (se) of Sustainable Land Management Projects point coordinates,
+<br> 2) reproduce the T test results,
+<br> 3) check whether masking out the SLM and its corresponding radial buffer in the calculation of local greening within the combined regions alters the *P*-values, mean, and standard error.
+
+Next, we explain the essential concepts needed to understand our analysis and better describe our hypothesis.
+
+
+**SLM & CR:** The SLM are merely point coordinates and therefore do not represent an area of influence where the effects of the projects would be visible. To overcome this limitation, radial buffers were generated in a prior step within GEE to approximate the areas impacted by the SLMs. The buffers analyzed in this script correspond to those used in Ruijsch et al. (2023), with sizes of 0.5 km, 1 km, 2 km, 3 km, 4 km, and 5 km.
+<br>The CR are defined as the intersections of an aridity map, a land use map, and country boundaries. For a consistent comparison, the share of LG around an SLM is only compared to the share of LG within the CR in which the SLM is located.
+<br>As a reminder, the *share of LG around a SLM* (SLM_LG) is defined as
+$$
+\text{SLM\_LG} = \frac{\text{Number of pixels around the SLM showing local greening}}{\text{Total number of pixels around the SLM}}
+$$
+The *share of LG within the CR* (CR_LG) is defined as
+$$
+\text{CR\_LG} = \frac{\text{Number of pixels within the CR showing local greening}}{\text{Total number of pixels within a CR}}
+$$
+
+**1) mean and se:** Figure 3 B in Ruijsch et al 2023 shows the mean and se of the SLM_LG for all SLM and a subset of SLM, namely revegetation and natural regeneration. These values are the last output from the whole GEE pipeline. We try to reproduce them, in order to compare other measures that we took
+
+**T-test:** The resulting *P*-values are particularly important as they are discussed in Jessica Ruijsch et al. (2023).
+The test investigates, if the share of *Local Greening Pixels(LG)* around the *Sustainable Land Management Projects (SLM)* is greater than share of LG within the *Combined Regions (CR)*. In Ruijsch et al 2023 this is done with a two sided T Test (See Ruijsch et al 2023: Chapter 2.5). However, as it is assessed "whether SLM projects cause a significant *increase* in local greening" we chose a one sided T Test instead.
+
+
+**Masking out the SLM:** Besides comparing SLM_LG with CR_LG in a T test, we assess, whether the T test results differ, if masking the SLM's during the calculation of CR_LG. We propose this additional step, as the SLM_LG should be compared with NON-SLM_LG to verify an greening effect of the SLM. Masking out SLM's within the CR assures this.
+
+During the Script we include code chunks of the original script from Ruijsch et al 2023 with which Fig 3 B was done. 
+We comment on the authors analysis and partially suggest an alternative approach. 
+
+In a last step, we will repeat the analysis but for SLM and CR data based on NIRv and NDVI rather than EVI and NDVI.
+For this step we don't mask the CR, because masking doesn't affect the results by and large (See section 7).
+
+Our first attempt to replicate the mean, se, and T Test results failed.
+After contacting Jessica Rujisch she kindly provided her Python script for generating Fig 3 B in Ruijsch et al 2023.
+The discrepancies in the results originate mainly from dfferent data filtering, which will be discussed and this section.
+Because we did our initial script in R, we translated and embedded the Python script from Ruijsch et al 2023 into our R script to the best of our knowledge.
+However, we included pieces of the original script when needed to.
+```{python class.source="bg-info", class.output="bg-info"}
+print("Python chunks and their output are marked in blue.")
+```
+
+The authors provide the raw data but partly the meaning of the variables is not traceable as they don't occur in the Google Earth Engine (GEE) scripts.
+
+# I) Reproduce Study Results
+in this section we first load in the data, then reproduce the mean and se of the LG_SLM and LG_CR. Also, we do the T test and reproduce the *P* values.
+Finally, Figure 3 B is reproduced to visualize and compare mentioned metrics for all SLMs and the subsets revegetation and natural regeneration.
+
+## How Data is Loaded in Ruijsch et al 2023
+The authors filtered out rows, where *NDVImask* == 0 but. Note that NAs were not filtered out. We can't comprehend,
+what the variable *NDVImask* means and why they filter *again*, as the NDVI < 1500 filtering happened already in the GEE.
+The GEE NDVI filtering was done on variable, as the following code shows.
+Also, presupposing that *NDVImask* codes for NDVI > 1500 or < 1500, it doesn't align with *SAMPLE_NDV.*
+```{r}
+unfiltered_SLM <- read.csv("evi_ndvi/unfiltered_technologies.csv") %>% arrange(SAMPLE_NDV)
+filtered_SLM <- read.csv("evi_ndvi/projectSamples_v12_0500mBuffer.csv") %>% arrange(SAMPLE_NDV)
+# in GEE: filter out SAMPLE_NDV < 1500
+
+output_text <- paste0("unfiltered SLMs row number: ",
+    length(unfiltered_SLM$SAMPLE_NDV))
+output_text <- paste0(output_text,"\n")
+summary(unfiltered_SLM$SAMPLE_NDV)
+head(unfiltered_SLM, 10)[,7:8]
+output_text <- paste0(output_text,"there are ",
+    length(which(unfiltered_SLM$NDVImask == 0 & unfiltered_SLM$SAMPLE_NDV > 1500)),
+    " cases, where NDVImask == 0 & SAMPLE_NDV > 1500")
+
+
+output_text <- paste0(output_text,"\n_____________________________________________________________\n\n")
+output_text <- paste0(output_text,"filtered SLMs row number: ",
+    length(filtered_SLM$SAMPLE_NDV))
+output_text <- paste0(output_text,"\n")
+summary(filtered_SLM$SAMPLE_NDV)
+head(filtered_SLM, 10)[,7:8]
+output_text <- paste0(output_text,"there are ",
+    length(which(filtered_SLM$NDVImask == 0 & filtered_SLM$SAMPLE_NDV > 1500)),
+    " cases, where NDVImask == 0 & SAMPLE_NDV > 1500")
+cat(output_text)
+```
+
+```{python class.source="bg-info", class.output="bg-info"}
+# Define file paths and buffer sizes
+buffer_sizes = [5000, 4000, 3000, 2000, 1000, 500]
+file_paths = [f'evi_ndvi/projectSamples_v12_{size}mBuffer.csv' for size in buffer_sizes]
+file_paths[-1] = "evi_ndvi/projectSamples_v12_0500mBuffer.csv"
+randomStatisticsMean = (
+    pd.read_csv('evi_ndvi/mean_AI_country_LU_region_slmMask0.csv', sep=',')
+    .sort_values(by='index', ascending=True)
+    .groupby(by='index')
+    .mean(numeric_only=True)
+)
+
+project_statistics = {}
+for size, file_path in zip(buffer_sizes, file_paths):
+    df = (
+        pd.read_csv(file_path, sep=',')
+        .sort_values(by='index', ascending=True)
+        .set_index('index')
+    )
+    df['mean_areaMean'] = randomStatisticsMean['mean']
+    project_statistics[size] = df
+```
+
+Additionally, the authors drop duplicated values for *mean* and *definition*.
+This seems to contradict their statement: "If a single SLM project
+contained multiple locations, we considered it as mul-
+tiple projects, resulting in 628 project locations" (See Ruijsch et al 2023: Chapter 2.1).
+Another indication that dropping rows is inappropriate is that it results in a varying number of data points across differently sized SLM buffers. This occurs because the differing buffer sizes around the SLM yield distinct mean values (i.e., %LG within the buffer), causing the rows dropped to vary with each buffer size. The next chunks demonstrates this: without dropping each buffer has 550 data points.
+
+```{python class.source="bg-info", class.output="bg-info"}
+for size in buffer_sizes:  
+  print(f"Buffer {size}m: {len(project_statistics[size])} rows")
+```
+
+After dropping, the data points vary between the buffer sizes.
+```{python class.source="bg-info", class.output="bg-info"}
+for size in buffer_sizes:
+    project_statistics[size] = project_statistics[size].drop_duplicates(
+      subset=['mean', 'definition'])
+    print(f"Buffer {size}m: {len(project_statistics[size])} rows")
+```
+We don't see a reason to drop data points and think it is wrong to do so. Therefore, in our analysis we don't drop any data points. However, we do additionally filter out *NDVImask* == NA.
+
+Regardless of which variable is more appropriate for filtering,
+we think that *NAs should be excluded* when present in *NDVImask* or *SAMPLE_NDV*.
+Yet, we don't know how NAs are produced in the raw data and what they actually mean.
+
+## Load in SLM and CR and subset CR
+Here we load in the *SLM* and the *CR*. 
+We take the mean value of the cr_list because each SLM can be assigned to multiple CR, as latter can be spatially separated.
+Also, we create a subset of CR by project type.
+```{r}
+# SLM
+setwd("evi_ndvi/")
+files <- list.files(pattern = "project", full.names = F)
+x <- sub(".*v12_(\\d{4}).*", "\\1", files)
+var_name_p <- paste0("slm_", x)
+slm_list <- lapply(seq_along(files), function(x){
+  res <- read.csv(files[x])
+  return(res)
+})
+names(slm_list) <- var_name_p #give df names for clarification
+index_ndvi_zero <- slm_list$slm_0500$index[slm_list$slm_0500$NDVImask == 0 |
+                                             is.na(slm_list$slm_0500$NDVImask)]
+
+slm_list <- lapply(slm_list, function(df) {
+  df <- df %>%
+    mutate(mean = round(mean, 10)) %>%
+    filter(NDVImask != 0 & !is.na(NDVImask)) %>%        # filtering out 0 and NA
+    # distinct(mean, definition, .keep_all = TRUE) %>%  # drop duplicates
+    mutate(slm_lg = mean) %>% 
+    select(definition, index, slm_lg, type) %>% 
+    arrange(index)
+
+  return(df)
+})
+
+# combined regions
+cr <- read.csv("mean_AI_country_LU_region_slmMask0.csv") %>% 
+  filter(!index %in% index_ndvi_zero) %>%
+  group_by(index) %>%
+  summarise(cr_lg = mean(mean)) %>%
+  select(cr_lg,index)
+
+# combine SLM and CR
+slm_cr <- lapply(slm_list, function(x){
+  x <- x %>% inner_join(y = cr, by = "index")
+})
+
+# CR subset by project type
+types_s <- unique(slm_cr$slm_0500$type)
+subnames <- paste0("type_",gsub("\\s+", "", types_s)) # deleting white spaces
+
+sub_ls <- list()
+
+for (i in types_s) {
+  types <- gsub("\\s+", "", i)
+  sub_ls[[types]] <- lapply(slm_cr, function(x){
+    x %>% filter(type == i)
+  })
+}
+```
+
+## Explanation of variable names
+For an easier comprehension of our analysis, we explain the meaning of each variable in the data frames.
+
+### slm_list
+The list consists of 6 data frames, all with a unique numeric ending. This ending stands for the radial buffer around the SLM [m]. Inside this buffer the SLM_LG is calculated.
+
+```{r}
+head(slm_list$slm_0500, 4)
+```
+
+
+| **Column Name** | **Description**                                                                                          |
+|------------------|----------------------------------------------------------------------------------------------------------|
+| *definition*    | detailed explanation of project                                                                         |
+| *index*         | Index of the SLM.                                                                                       |
+| *slm_lg*        | Share of local greening within the selected buffer.                                                     |
+| *technology*    | Unique code of the SLM.                                                                                 |
+| *type*          | One of the following SLM types: erosion prevention, agriculture management, social measures, natural regeneration, animals, water management, water harvesting, river and coastal restoration, agroforestry, revegetation, fire management. Subsets are created based on this variable.|
+
+### cr_list
+This list consists of 7 data frames. In the first "nomask" no masking was applied inside the CR, like in Ruijsch et al 2023. For the other 6 data frames, the CR_LG was calculated with an SLM-Mask inside the CR. The numbers at the end of the data frame name indicate the size[km] of the radial buffer around the SLM that was used for masking. Masking buffers were the same as buffers for calculating SLM_LG.
+
+```{r}
+head(cr, 4)
+```
+
+| **Column Name**  | **Description**                                                                                      |
+|-------------------|------------------------------------------------------------------------------------------------------|
+| *cr_lg*          | Share of local greening within the selected CR.                                                     |
+| *index*          | Index of the SLM.                                                                                   |
+
+
+## T test
+
+### Create T test Function
+```{r}
+T_test_custom_simp <- function(slm_cr, alternative, print_results) {
+  # Initialize vectors for results
+  pvals <- numeric()
+  mean_x <- numeric()
+
+  # Populate pvals and mean_x
+  for (i in names(slm_cr)) {
+      t_result <- t.test(
+        slm_cr[[i]]$slm_lg,
+        slm_cr[[i]]$cr_lg,
+        paired = FALSE,
+        alternative = alternative,
+        var.equal = FALSE,
+        mu = 0
+      )
+
+      pvals[i] <- t_result$p.value
+      mean_x[i] <- t_result$estimate["mean of x"]
+  }
+
+  # Print results if print_results is TRUE
+  if (print_results) {
+    cat("P-values:\n")
+    print(pvals)
+    cat("\nMeans of x:\n")
+    print(mean_x)
+  }
+
+  # Prepare results
+  ttest_results <- data.frame(
+    pvals = pvals,
+    mean_x = mean_x
+  )
+  return(ttest_results)
+}
+
+```
+### T test For all SLM
+```{r}
+all_prj_1sided <- T_test_custom_simp(slm_cr = slm_cr,
+                                     alternative = "greater",
+                                     print_results = T)
+```
+### T test For Project Type Specific SLM Subset
+
+```{r}
+sub_ttest <- lapply(sub_ls, function(x){
+  T_test_custom_simp(slm_cr = x,
+                     alternative = "greater",
+                     print_results = F)
+})
+```
+
+## Calculate mean and se for SLM_LG and CR_LG
+Here we calculate the metrics and join the *P* values from before.
+```{r}
+# take mean lg_slm and lg_cr for all
+all_slm_sum <- sapply(slm_cr, function(x){
+  x <- x %>%  summarise(mean_slm_lg = mean(slm_lg),
+                        se_slm_lg = sd(slm_lg) / sqrt(n()),
+                        mean_cr_lg = mean(cr_lg),
+                        se_cr_lg = sd(cr_lg) / sqrt(n()))
+}, simplify = TRUE) %>%
+  t() %>%
+  as.data.frame() %>% 
+  rownames_to_column(var = "buffer") %>% 
+  pivot_longer(- buffer, values_to = "vals", names_to = "vars") 
+
+# bring the pvals in a similar format
+all_p_slm <- all_prj_1sided %>%
+  rownames_to_column(var = "buffer") %>% 
+  inner_join(y = all_slm_sum, by = "buffer") %>% 
+  mutate(type = "all") %>% 
+  select(type, everything(), -mean_x)
+
+
+# take mean lg_slm and lg_cr for subsets
+sub_slm_ls_sum <- lapply(sub_ls, function(x){
+  lapply(x, function(y){
+    y <- y %>%  summarise(mean_slm_lg = mean(slm_lg),
+                          se_slm_lg = sd(slm_lg) / sqrt(n()),
+                          mean_cr_lg = mean(cr_lg),
+                          se_cr_lg = sd(cr_lg) / sqrt(n()))
+  })
+})
+
+# unwrap the lists and join them
+sub_slm_sum <- map_dfr(sub_slm_ls_sum,
+                       ~ map_dfr(.x, ~ .x, .id = "buffer"), .id = "type") %>% 
+  pivot_longer(-c(type, buffer), names_to = "vars", values_to = "vals")
+sub_p <- map_dfr(sub_ttest,
+                 ~ .x %>% rownames_to_column("buffer"), .id = "type") %>% 
+  select(-mean_x)
+
+sub_p_slm <- sub_p %>%
+  inner_join(sub_slm_sum, by = c("buffer", "type"))
+```
+
+## Final Plot
+```{r}
+fig3_pre1 <- rbind(sub_p_slm, all_p_slm) %>% 
+  mutate(buffer = case_when(vars == "mean_cr_lg" ~ "cr",
+                            vars == "se_cr_lg" ~ "cr",
+                            TRUE ~ buffer))
+
+fig3_pre2 <- fig3_pre1 %>%
+  distinct(type, buffer, vars, vals, .keep_all = T) %>% 
+  pivot_wider(id_cols = c(buffer, type, pvals),
+              names_from = vars,
+              values_from = vals)  %>% 
+  mutate(mean_ = as.numeric(coalesce(mean_slm_lg, mean_cr_lg)),
+         se_ = as.numeric(coalesce(se_slm_lg, se_cr_lg))) %>% 
+  select(mean_, se_, type, buffer, pvals) %>% 
+  mutate(shape = case_when(buffer == "cr" ~ buffer,
+                           TRUE ~ "slm")) %>% 
+  mutate(key = case_when(pvals <= 0.05 & shape == "slm" ~ "s",
+                         pvals > 0.05 & shape == "slm" ~ "r",
+                         shape == "cr" ~ "t"))
+
+# filter out all, revegetation, naturalregeneration
+fig3 <- fig3_pre2 %>%
+  filter(type %in% c("all", "revegetation", "naturalregeneration")) %>% 
+  mutate(type = factor(type,
+                       levels = c("all",
+                                  "revegetation",
+                                  "naturalregeneration")),
+         buffer = factor(buffer, levels = c("slm_5000",
+                                            "slm_4000",
+                                            "slm_3000",
+                                            "slm_2000",
+                                            "slm_1000",
+                                            "slm_0500",
+                                            "cr")))
+ 
+```
+
+```{r}
+#| label: "fig-fig3_reproduce"
+#| fig-width: 5.5
+#| fig-height: 5
+#| fig-cap: "Mean and standard error(se) of the share of local greening in all SLM (left) and SLM subsets by project type (mid, right). Mean and se are given for each buffer size around the SLM. Stars show significant differences between SLM_LG and CR_LG from a one sided T test. Projects with a median NDVI > 0.15 were filtered out. Local greening based on EVI and NDVI data from MOD13Q1.061"
+
+ggplot(data = fig3,
+       aes(y = mean_, x = buffer)) + 
+  geom_point(aes(shape = key), 
+             position = position_dodge(width = 0.5), size = 3) +
+  geom_errorbar(aes(ymin = mean_ - se_, ymax = mean_ + se_),
+                position = position_dodge(width = 0.5),
+                width = 0.2) +
+  scale_shape_manual(values = c(16, 8, 17),
+                   labels = c("SLM_LG\nmean", "P <= 0.05", "CR_LG\nmean")) +
+  scale_x_discrete(labels = c("5", "4", "3", "2", "1", "0.5", "cr")) +
+  labs(
+    title = "",
+    x = "Radius around Project Point[km]",
+    y = "Fraction of Greening Pixels around Point",
+    cex = 2,
+    shape = NULL
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = c(0.5, 0.35),
+    legend.justification = c(2, -1),# Position legend at the top
+    legend.direction = "horizontal",  # Arrange items horizontally
+    legend.box = "horizontal",
+    strip.text = element_text(size = 12),
+    legend.background = element_rect(fill = "white", color = "white"), # White box
+    legend.box.margin = margin(0, 0, 0, 0)# Ensure the legend is a single box
+  ) +
+  guides(shape = guide_legend(nrow = 3, ncol = 1)) +  # Set legend layout
+  facet_wrap(~type, ncol = 3, labeller = labeller(type = c(
+  "naturalregeneration" = "Natural Regeneration",
+  "revegetation" = "Revegetation",
+  "all" = "Sustainable Land\nManagement"
+  )))
+```
+```{r}
+# fig3 <- fig3 %>% mutate(q = "a")
+# write.csv(fig3, "/home/student/PERSISTENT/capstone/quarter_africa/allafrica_slm.csv")
+```
+
+
+```{r}
+#| include: false
+# ggsave(
+#  filename = "fig3_reproduce.pdf", 
+#  plot = last_plot(), 
+#  width = 5.5, 
+#  height = 5, 
+#  units = "in"
+# )
+```
+
+# II) North, East, South, West: A Segmented View of Africa’s Land Use
+In this section, we apply the same analysis pipeline to each quadrant of Africa to identify regional differences. This allows us to evaluate whether the data supports a continent-wide generalization or if land use projects require region-specific considerations.
+
+## North
+load in tif files
+```{r}
+tif_n <- rast("quarter_africa/NESW_tif/north.tif")
+tif_e <- rast("quarter_africa/NESW_tif/east.tif")
+tif_w <- rast("quarter_africa/NESW_tif/west.tif")
+tif_s <- rast("quarter_africa/NESW_tif/south.tif")
+extent_n <- ext(tif_n)
+```
+
+load in slm and cr
+```{r}
+# SLM
+setwd("evi_ndvi/")
+files <- list.files(pattern = "project", full.names = F)
+x <- sub(".*v12_(\\d{4}).*", "\\1", files)
+var_name_p <- paste0("slm_", x)
+slm_list <- lapply(seq_along(files), function(x){
+  res <- read.csv(files[x])
+  return(res)
+})
+names(slm_list) <- var_name_p #give df names for clarification
+index_ndvi_zero <- slm_list$slm_0500$index[slm_list$slm_0500$NDVImask == 0 |
+                                             is.na(slm_list$slm_0500$NDVImask)]
+
+slm_list <- lapply(slm_list, function(df) {
+  df <- df %>%
+    mutate(mean = round(mean, 10)) %>%
+    filter(NDVImask != 0 & !is.na(NDVImask)) %>%        # filtering out 0 and NA
+    # distinct(mean, definition, .keep_all = TRUE) %>%  # drop duplicates
+    mutate(slm_lg = mean) %>% 
+    select(definition, index, slm_lg, type, X, Y) %>% 
+    arrange(index)
+
+  return(df)
+})
+
+# combined regions
+cr <- read.csv("mean_AI_country_LU_region_slmMask0.csv") %>% 
+  filter(!index %in% index_ndvi_zero) %>%
+  group_by(index) %>%
+  summarise(cr_lg = mean(mean)) %>%
+  select(cr_lg,index)
+
+# combine SLM and CR
+slm_cr <- lapply(slm_list, function(x){
+  x <- x %>% inner_join(y = cr, by = "index")
+})
+
+# CR subset by project type
+types_s <- unique(slm_cr$slm_0500$type)
+subnames <- paste0("type_",gsub("\\s+", "", types_s)) # deleting white spaces
+
+sub_ls <- list()
+
+for (i in types_s) {
+  types <- gsub("\\s+", "", i)
+  sub_ls[[types]] <- lapply(slm_cr, function(x){
+    x %>% filter(type == i)
+  })
+}
+```
+
+extract only those slm_cr within the quarters
+```{r}
+# Convert dataframe to spatial points
+slm_cr_vec <- lapply(slm_cr, function(x){
+   vect(x, geom = c("X", "Y"), crs = crs(tif_n))
+   }
+)
+```
+
+```{r}
+# north
+slm_cr_n <- lapply(slm_cr_vec, function(x){
+   x[extent_n, ] %>% 
+   as.data.frame(.)
+   }
+)
+```
+
+### T test
+#### Create T test Function
+```{r}
+T_test_custom_simp <- function(slm_cr, alternative, print_results) {
+  # Initialize vectors for results
+  pvals <- numeric()
+  mean_x <- numeric()
+
+  # Populate pvals and mean_x
+  for (i in names(slm_cr)) {
+      t_result <- t.test(
+        slm_cr[[i]]$slm_lg,
+        slm_cr[[i]]$cr_lg,
+        paired = FALSE,
+        alternative = alternative,
+        var.equal = FALSE,
+        mu = 0
+      )
+
+      pvals[i] <- t_result$p.value
+      mean_x[i] <- t_result$estimate["mean of x"]
+  }
+
+  # Print results if print_results is TRUE
+  if (print_results) {
+    cat("P-values:\n")
+    print(pvals)
+    cat("\nMeans of x:\n")
+    print(mean_x)
+  }
+
+  # Prepare results
+  ttest_results <- data.frame(
+    pvals = pvals,
+    mean_x = mean_x
+  )
+
+  return(ttest_results)
+}
+
+```
+#### T test For all SLM
+```{r}
+all_prj_1sided <- T_test_custom_simp(slm_cr = slm_cr_n,
+                                     alternative = "greater",
+                                     print_results = T)
+```
+
+### Calculate mean and se for SLM_LG and CR_LG
+```{r}
+# take mean lg_slm and lg_cr for all
+all_slm_sum <- sapply(slm_cr_n, function(x){
+  x <- x %>%  summarise(mean_slm_lg = mean(slm_lg),
+                        se_slm_lg = sd(slm_lg) / sqrt(n()),
+                        mean_cr_lg = mean(cr_lg),
+                        se_cr_lg = sd(cr_lg) / sqrt(n()))
+}, simplify = TRUE) %>%
+  t() %>%
+  as.data.frame() %>% 
+  rownames_to_column(var = "buffer") %>% 
+  pivot_longer(- buffer, values_to = "vals", names_to = "vars") 
+
+# bring the pvals in a similar format
+all_p_slm <- all_prj_1sided %>%
+  rownames_to_column(var = "buffer") %>% 
+  inner_join(y = all_slm_sum, by = "buffer") %>% 
+  mutate(type = "all") %>% 
+  select(type, everything(), -mean_x)
+```
+### Final Plot
+```{r}
+fig3_pre1 <- all_p_slm %>% 
+  mutate(buffer = case_when(vars == "mean_cr_lg" ~ "cr",
+                            vars == "se_cr_lg" ~ "cr",
+                            TRUE ~ buffer))
+
+fig3_pre2 <- fig3_pre1 %>%
+  distinct(type, buffer, vars, vals, .keep_all = T) %>% 
+  pivot_wider(id_cols = c(buffer, type, pvals),
+              names_from = vars,
+              values_from = vals)  %>% 
+  mutate(mean_ = as.numeric(coalesce(mean_slm_lg, mean_cr_lg)),
+         se_ = as.numeric(coalesce(se_slm_lg, se_cr_lg))) %>% 
+  select(mean_, se_, type, buffer, pvals) %>% 
+  mutate(shape = case_when(buffer == "cr" ~ buffer,
+                           TRUE ~ "slm")) %>% 
+  mutate(key = case_when(pvals <= 0.05 & shape == "slm" ~ "s",
+                         pvals > 0.05 & shape == "slm" ~ "r",
+                         shape == "cr" ~ "t"))
+
+# filter out all, revegetation, naturalregeneration
+fig3 <- fig3_pre2 %>%
+         mutate(buffer = factor(buffer, levels = c("slm_5000",
+                                            "slm_4000",
+                                            "slm_3000",
+                                            "slm_2000",
+                                            "slm_1000",
+                                            "slm_0500",
+                                            "cr")))
+```
+
+```{r}
+#| label: "fig-fig3_north"
+#| fig-width: 5.5
+#| fig-height: 5
+#| fig-cap: "Mean and standard error(se) of the share of local greening in all SLM (left) and SLM subsets by project type (mid, right). Mean and se are given for each buffer size around the SLM. Stars show significant differences between SLM_LG and CR_LG from a one sided T test. Projects with a median NDVI > 0.15 were filtered out. Local greening based on NIRv and NDVI data from MOD13Q1.006. Only for Norther Africa quadrant"
+
+# First create dummy data point that will be hidden but creates the legend entry
+dummy_data <- fig3[1,]  # Take first row of your data
+dummy_data$key <- "s"  # New key for P <= 0.05
+dummy_data$mean_ <- NA      # NA value so it won't plot
+dummy_data$type <- "all"
+
+# Combine with original data
+fig3_with_dummy <- fig3
+fig3_with_dummy$key <- factor(fig3_with_dummy$key, levels = c("r","t","s"))
+fig3_with_dummy <- fig3_with_dummy %>%
+                      rbind(., dummy_data)
+
+
+ggplot(data = fig3_with_dummy,
+       aes(y = mean_, x = buffer)) + 
+  geom_point(aes(shape = key), 
+             position = position_dodge(width = 0.5), size = 3,
+             na.rm = TRUE) +  # Added na.rm=TRUE to handle NA values
+  geom_errorbar(aes(ymin = mean_ - se_, ymax = mean_ + se_),
+                position = position_dodge(width = 0.5),
+                width = 0.2,
+                na.rm = TRUE) +  # Added na.rm=TRUE to handle NA values
+  scale_shape_manual(values = c(16, 17, 8),
+                   labels = c("SLM_LG\nmean", "CR_LG\nmean", "P <= 0.05")) +
+  scale_x_discrete(labels = c("5", "4", "3", "2", "1", "0.5", "cr")) +
+  labs(
+    title = "",
+    x = "Radius around Project Point[km]",
+    y = "Fraction of Greening Pixels around Point",
+    cex = 2,
+    shape = NULL
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = c(1.2,-.05),
+    legend.justification = c(2, -1),
+    legend.direction = "horizontal",
+    legend.box = "horizontal",
+    strip.text = element_text(size = 12),
+    legend.background = element_rect(fill = "white", color = "white"),
+    legend.box.margin = margin(0, 0, 0, 0)
+  ) +
+  guides(shape = guide_legend(nrow = 1, ncol = 3)) +
+  facet_wrap(~type, ncol = 3, labeller = labeller(type = c(
+    "naturalregeneration" = "Natural Regeneration",
+    "revegetation" = "Revegetation",
+    "all" = "Sustainable Land\nManagement"
+  )))
+```
+
+```{r}
+#| include: false
+
+
+# ggsave(
+#   filename = "/home/student/PERSISTENT/capstone/figures/fig3_north.pdf",
+#   plot = last_plot(),
+#   width = 5.5,
+#   height = 5,
+#   units = "in"
+# )
+```
+### Store values in data frame
+For every quadrant, the values are stored in a data frame
+```{r}
+df_vi_1 <- fig3 %>% mutate(q = "n")
+```
+The same operations are done for all directions/quadrant.
+They are not included in the rendered document. (#| include: false)
+
+
+## East
+extract only those slm_cr within the quarters
+```{r}
+#| include: false
+
+# Convert dataframe to spatial points
+slm_cr_vec <- lapply(slm_cr, function(x){
+   vect(x, geom = c("X", "Y"), crs = crs(tif_n))
+   }
+)
+
+extent_e <- ext(tif_e)
+```
+
+```{r}
+#| include: false
+
+# east
+slm_cr_e <- lapply(slm_cr_vec, function(x){
+   x[extent_e, ] %>% 
+   as.data.frame(.)
+   }
+)
+```
+
+```{r}
+#| include: false
+all_prj_1sided <- T_test_custom_simp(slm_cr = slm_cr_e,
+                                     alternative = "greater",
+                                     print_results = T)
+```
+
+```{r}
+#| include: false
+# take mean lg_slm and lg_cr for all
+all_slm_sum <- sapply(slm_cr_e, function(x){
+  x <- x %>%  summarise(mean_slm_lg = mean(slm_lg),
+                        se_slm_lg = sd(slm_lg) / sqrt(n()),
+                        mean_cr_lg = mean(cr_lg),
+                        se_cr_lg = sd(cr_lg) / sqrt(n()))
+}, simplify = TRUE) %>%
+  t() %>%
+  as.data.frame() %>% 
+  rownames_to_column(var = "buffer") %>% 
+  pivot_longer(- buffer, values_to = "vals", names_to = "vars") 
+
+# bring the pvals in a similar format
+all_p_slm <- all_prj_1sided %>%
+  rownames_to_column(var = "buffer") %>% 
+  inner_join(y = all_slm_sum, by = "buffer") %>% 
+  mutate(type = "all") %>% 
+  select(type, everything(), -mean_x)
+```
+
+```{r}
+#| include: false
+fig3_pre1 <- all_p_slm %>% 
+  mutate(buffer = case_when(vars == "mean_cr_lg" ~ "cr",
+                            vars == "se_cr_lg" ~ "cr",
+                            TRUE ~ buffer))
+
+fig3_pre2 <- fig3_pre1 %>%
+  distinct(type, buffer, vars, vals, .keep_all = T) %>% 
+  pivot_wider(id_cols = c(buffer, type, pvals),
+              names_from = vars,
+              values_from = vals)  %>% 
+  mutate(mean_ = as.numeric(coalesce(mean_slm_lg, mean_cr_lg)),
+         se_ = as.numeric(coalesce(se_slm_lg, se_cr_lg))) %>% 
+  select(mean_, se_, type, buffer, pvals) %>% 
+  mutate(shape = case_when(buffer == "cr" ~ buffer,
+                           TRUE ~ "slm")) %>% 
+  mutate(key = case_when(pvals <= 0.05 & shape == "slm" ~ "s",
+                         pvals > 0.05 & shape == "slm" ~ "r",
+                         shape == "cr" ~ "t"))
+
+# filter out all, revegetation, naturalregeneration
+fig3 <- fig3_pre2 %>%
+         mutate(buffer = factor(buffer, levels = c("slm_5000",
+                                            "slm_4000",
+                                            "slm_3000",
+                                            "slm_2000",
+                                            "slm_1000",
+                                            "slm_0500",
+                                            "cr")))
+```
+
+```{r}
+#| include: false
+#| label: "fig-fig3_east"
+#| fig-width: 5.5
+#| fig-height: 5
+#| fig-cap: "Mean and standard error(se) of the share of local greening in all SLM (left) and SLM subsets by project type (mid, right). Mean and se are given for each buffer size around the SLM. Stars show significant differences between SLM_LG and CR_LG from a one sided T test. Projects with a median NDVI > 0.15 were filtered out. Local greening based on NIRv and NDVI data from MOD13Q1.006. Only for Eastern Africa quadrant"
+
+# First create dummy data point that will be hidden but creates the legend entry
+dummy_data <- fig3[1,]  # Take first row of your data
+dummy_data$key <- "r"  # New key for P <= 0.05
+dummy_data$mean_ <- NA      # NA value so it won't plot
+dummy_data$type <- "all"
+
+# Combine with original data
+fig3_with_dummy <- fig3
+fig3_with_dummy$key <- factor(fig3_with_dummy$key, levels = c("r","t","s"))
+fig3_with_dummy <- fig3_with_dummy %>%
+                      rbind(., dummy_data)
+
+
+ggplot(data = fig3_with_dummy,
+       aes(y = mean_, x = buffer)) + 
+  geom_point(aes(shape = key), 
+             position = position_dodge(width = 0.5), size = 3,
+             na.rm = TRUE) +  # Added na.rm=TRUE to handle NA values
+  geom_errorbar(aes(ymin = mean_ - se_, ymax = mean_ + se_),
+                position = position_dodge(width = 0.5),
+                width = 0.2,
+                na.rm = TRUE) +  # Added na.rm=TRUE to handle NA values
+  scale_shape_manual(values = c(16, 17, 8),
+                   labels = c("SLM_LG\nmean", "CR_LG\nmean", "P <= 0.05")) +
+  scale_x_discrete(labels = c("5", "4", "3", "2", "1", "0.5", "cr")) +
+  labs(
+    title = "",
+    x = "Radius around Project Point[km]",
+    y = "Fraction of Greening Pixels around Point",
+    cex = 2,
+    shape = NULL
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = c(1.2,-.05),
+    legend.justification = c(2, -1),
+    legend.direction = "horizontal",
+    legend.box = "horizontal",
+    strip.text = element_text(size = 12),
+    legend.background = element_rect(fill = "white", color = "white"),
+    legend.box.margin = margin(0, 0, 0, 0)
+  ) +
+  guides(shape = guide_legend(nrow = 1, ncol = 3)) +
+  facet_wrap(~type, ncol = 3, labeller = labeller(type = c(
+    "naturalregeneration" = "Natural Regeneration",
+    "revegetation" = "Revegetation",
+    "all" = "Sustainable Land\nManagement"
+  )))
+```
+
+```{r}
+#| include: false
+
+
+# ggsave(
+#   filename = "/home/student/PERSISTENT/capstone/figures/fig3_east.pdf",
+#   plot = last_plot(),
+#   width = 5.5,
+#   height = 5,
+#   units = "in"
+# )
+```
+
+```{r}
+#| include: false
+df_vi_2 <- fig3 %>% mutate(q = "e") %>% rbind(df_vi_1)
+```
+
+
+## South
+load in tif files
+```{r}
+#| include: false
+tif_s <- rast("quarter_africa/NESW_tif/south.tif")
+extent_s <- ext(tif_s)
+```
+
+```{r}
+#| include: false
+# south
+slm_cr_s <- lapply(slm_cr_vec, function(x){
+   x[extent_s, ] %>% 
+   as.data.frame(.)
+   }
+)
+```
+
+```{r}
+#| include: false
+all_prj_1sided <- T_test_custom_simp(slm_cr = slm_cr_s,
+                                     alternative = "greater",
+                                     print_results = T)
+```
+
+```{r}
+#| include: false
+# take mean lg_slm and lg_cr for all
+all_slm_sum <- sapply(slm_cr_s, function(x){
+  x <- x %>%  summarise(mean_slm_lg = mean(slm_lg),
+                        se_slm_lg = sd(slm_lg) / sqrt(n()),
+                        mean_cr_lg = mean(cr_lg),
+                        se_cr_lg = sd(cr_lg) / sqrt(n()))
+}, simplify = TRUE) %>%
+  t() %>%
+  as.data.frame() %>% 
+  rownames_to_column(var = "buffer") %>% 
+  pivot_longer(- buffer, values_to = "vals", names_to = "vars") 
+
+# bring the pvals in a similar format
+all_p_slm <- all_prj_1sided %>%
+  rownames_to_column(var = "buffer") %>% 
+  inner_join(y = all_slm_sum, by = "buffer") %>% 
+  mutate(type = "all") %>% 
+  select(type, everything(), -mean_x)
+```
+
+```{r}
+#| include: false
+fig3_pre1 <- all_p_slm %>% 
+  mutate(buffer = case_when(vars == "mean_cr_lg" ~ "cr",
+                            vars == "se_cr_lg" ~ "cr",
+                            TRUE ~ buffer))
+
+fig3_pre2 <- fig3_pre1 %>%
+  distinct(type, buffer, vars, vals, .keep_all = T) %>% 
+  pivot_wider(id_cols = c(buffer, type, pvals),
+              names_from = vars,
+              values_from = vals)  %>% 
+  mutate(mean_ = as.numeric(coalesce(mean_slm_lg, mean_cr_lg)),
+         se_ = as.numeric(coalesce(se_slm_lg, se_cr_lg))) %>% 
+  select(mean_, se_, type, buffer, pvals) %>% 
+  mutate(shape = case_when(buffer == "cr" ~ buffer,
+                           TRUE ~ "slm")) %>% 
+  mutate(key = case_when(pvals <= 0.05 & shape == "slm" ~ "s",
+                         pvals > 0.05 & shape == "slm" ~ "r",
+                         shape == "cr" ~ "t"))
+
+# filter out all, revegetation, naturalregeneration
+fig3 <- fig3_pre2 %>%
+         mutate(buffer = factor(buffer, levels = c("slm_5000",
+                                            "slm_4000",
+                                            "slm_3000",
+                                            "slm_2000",
+                                            "slm_1000",
+                                            "slm_0500",
+                                            "cr")))
+```
+
+```{r}
+#| include: false
+#| label: "fig-fig3_south"
+#| fig-width: 5.5
+#| fig-height: 5
+#| fig-cap: "Mean and standard error(se) of the share of local greening in all SLM (left) and SLM subsets by project type (mid, right). Mean and se are given for each buffer size around the SLM. Stars show significant differences between SLM_LG and CR_LG from a one sided T test. Projects with a median NDVI > 0.15 were filtered out. Local greening based on NIRv and NDVI data from MOD13Q1.006. Only for Southern Africa quadrant"
+
+# First create dummy data point that will be hidden but creates the legend entry
+dummy_data <- fig3[1,]  # Take first row of your data
+dummy_data$key <- "s"  # New key for P <= 0.05
+dummy_data$mean_ <- NA      # NA value so it won't plot
+dummy_data$type <- "all"
+
+# Combine with original data
+fig3_with_dummy <- fig3
+fig3_with_dummy$key <- factor(fig3_with_dummy$key, levels = c("r","t","s"))
+fig3_with_dummy <- fig3_with_dummy %>%
+                      rbind(., dummy_data)
+
+
+ggplot(data = fig3_with_dummy,
+       aes(y = mean_, x = buffer)) + 
+  geom_point(aes(shape = key), 
+             position = position_dodge(width = 0.5), size = 3,
+             na.rm = TRUE) +  # Added na.rm=TRUE to handle NA values
+  geom_errorbar(aes(ymin = mean_ - se_, ymax = mean_ + se_),
+                position = position_dodge(width = 0.5),
+                width = 0.2,
+                na.rm = TRUE) +  # Added na.rm=TRUE to handle NA values
+  scale_shape_manual(values = c(16, 17, 8),
+                   labels = c("SLM_LG\nmean", "CR_LG\nmean", "P <= 0.05")) +
+  scale_x_discrete(labels = c("5", "4", "3", "2", "1", "0.5", "cr")) +
+  labs(
+    title = "",
+    x = "Radius around Project Point[km]",
+    y = "Fraction of Greening Pixels around Point",
+    cex = 2,
+    shape = NULL
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = c(1.2,-.05),
+    legend.justification = c(2, -1),
+    legend.direction = "horizontal",
+    legend.box = "horizontal",
+    strip.text = element_text(size = 12),
+    legend.background = element_rect(fill = "white", color = "white"),
+    legend.box.margin = margin(0, 0, 0, 0)
+  ) +
+  guides(shape = guide_legend(nrow = 1, ncol = 3)) +
+  facet_wrap(~type, ncol = 3, labeller = labeller(type = c(
+    "naturalregeneration" = "Natural Regeneration",
+    "revegetation" = "Revegetation",
+    "all" = "Sustainable Land\nManagement"
+  )))
+```
+
+```{r}
+#| include: false
+
+
+# ggsave(
+#   filename = "/home/student/PERSISTENT/capstone/figures/fig3_south.pdf",
+#   plot = last_plot(),
+#   width = 5.5,
+#   height = 5,
+#   units = "in"
+# )
+```
+
+```{r}
+#| include: false
+df_vi_3 <- fig3 %>% mutate(q = "s") %>% rbind(df_vi_2)
+```
+
+
+## West
+load in tif files
+```{r}
+#| include: false
+tif_w <- rast("quarter_africa/NESW_tif/west.tif")
+extent_w <- ext(tif_w)
+```
+
+```{r}
+#| include: false
+# west
+slm_cr_w <- lapply(slm_cr_vec, function(x){
+   x[extent_w, ] %>% 
+   as.data.frame(.)
+   }
+)
+```
+
+```{r}
+#| include: false
+all_prj_1sided <- T_test_custom_simp(slm_cr = slm_cr_w,
+                                     alternative = "greater",
+                                     print_results = T)
+```
+
+```{r}
+#| include: false
+# take mean lg_slm and lg_cr for all
+all_slm_sum <- sapply(slm_cr_w, function(x){
+  x <- x %>%  summarise(mean_slm_lg = mean(slm_lg),
+                        se_slm_lg = sd(slm_lg) / sqrt(n()),
+                        mean_cr_lg = mean(cr_lg),
+                        se_cr_lg = sd(cr_lg) / sqrt(n()))
+}, simplify = TRUE) %>%
+  t() %>%
+  as.data.frame() %>% 
+  rownames_to_column(var = "buffer") %>% 
+  pivot_longer(- buffer, values_to = "vals", names_to = "vars") 
+
+# bring the pvals in a similar format
+all_p_slm <- all_prj_1sided %>%
+  rownames_to_column(var = "buffer") %>% 
+  inner_join(y = all_slm_sum, by = "buffer") %>% 
+  mutate(type = "all") %>% 
+  select(type, everything(), -mean_x)
+```
+
+```{r}
+#| include: false
+fig3_pre1 <- all_p_slm %>% 
+  mutate(buffer = case_when(vars == "mean_cr_lg" ~ "cr",
+                            vars == "se_cr_lg" ~ "cr",
+                            TRUE ~ buffer))
+
+fig3_pre2 <- fig3_pre1 %>%
+  distinct(type, buffer, vars, vals, .keep_all = T) %>% 
+  pivot_wider(id_cols = c(buffer, type, pvals),
+              names_from = vars,
+              values_from = vals)  %>% 
+  mutate(mean_ = as.numeric(coalesce(mean_slm_lg, mean_cr_lg)),
+         se_ = as.numeric(coalesce(se_slm_lg, se_cr_lg))) %>% 
+  select(mean_, se_, type, buffer, pvals) %>% 
+  mutate(shape = case_when(buffer == "cr" ~ buffer,
+                           TRUE ~ "slm")) %>% 
+  mutate(key = case_when(pvals <= 0.05 & shape == "slm" ~ "s",
+                         pvals > 0.05 & shape == "slm" ~ "r",
+                         shape == "cr" ~ "t"))
+
+# filter out all, revegetation, naturalregeneration
+fig3 <- fig3_pre2 %>%
+         mutate(buffer = factor(buffer, levels = c("slm_5000",
+                                            "slm_4000",
+                                            "slm_3000",
+                                            "slm_2000",
+                                            "slm_1000",
+                                            "slm_0500",
+                                            "cr")))
+```
+
+```{r}
+#| include: false
+#| label: "fig-fig3_west"
+#| fig-width: 5.5
+#| fig-height: 5
+#| fig-cap: "Mean and standard error(se) of the share of local greening in all SLM (left) and SLM subsets by project type (mid, right). Mean and se are given for each buffer size around the SLM. Stars show significant differences between SLM_LG and CR_LG from a one sided T test. Projects with a median NDVI > 0.15 were filtered out. Local greening based on NIRv and NDVI data from MOD13Q1.006. Only for Western Africa quadrant"
+
+# First create dummy data point that will be hidden but creates the legend entry
+dummy_data <- fig3[1,]  # Take first row of your data
+dummy_data$key <- "s"  # New key for P <= 0.05
+dummy_data$mean_ <- NA      # NA value so it won't plot
+dummy_data$type <- "all"
+
+# Combine with original data
+fig3_with_dummy <- fig3
+fig3_with_dummy$key <- factor(fig3_with_dummy$key, levels = c("r","t","s"))
+fig3_with_dummy <- fig3_with_dummy %>%
+                      rbind(., dummy_data)
+
+
+ggplot(data = fig3_with_dummy,
+       aes(y = mean_, x = buffer)) + 
+  geom_point(aes(shape = key), 
+             position = position_dodge(width = 0.5), size = 3,
+             na.rm = TRUE) +  # Added na.rm=TRUE to handle NA values
+  geom_errorbar(aes(ymin = mean_ - se_, ymax = mean_ + se_),
+                position = position_dodge(width = 0.5),
+                width = 0.2,
+                na.rm = TRUE) +  # Added na.rm=TRUE to handle NA values
+  scale_shape_manual(values = c(16, 17, 8),
+                   labels = c("SLM_LG\nmean", "CR_LG\nmean", "P <= 0.05")) +
+  scale_x_discrete(labels = c("5", "4", "3", "2", "1", "0.5", "cr")) +
+  labs(
+    title = "",
+    x = "Radius around Project Point[km]",
+    y = "Fraction of Greening Pixels around Point",
+    cex = 2,
+    shape = NULL
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = c(1.2,-.05),
+    legend.justification = c(2, -1),
+    legend.direction = "horizontal",
+    legend.box = "horizontal",
+    strip.text = element_text(size = 12),
+    legend.background = element_rect(fill = "white", color = "white"),
+    legend.box.margin = margin(0, 0, 0, 0)
+  ) +
+  guides(shape = guide_legend(nrow = 1, ncol = 3)) +
+  facet_wrap(~type, ncol = 3, labeller = labeller(type = c(
+    "naturalregeneration" = "Natural Regeneration",
+    "revegetation" = "Revegetation",
+    "all" = "Sustainable Land\nManagement"
+  )))
+```
+
+```{r}
+#| include: false
+
+
+# ggsave(
+#   filename = "/home/student/PERSISTENT/capstone/figures/fig3_west.pdf",
+#   plot = last_plot(),
+#   width = 5.5,
+#   height = 5,
+#   units = "in"
+# )
+```
+
+```{r}
+#| include: false
+df_vi_4 <- fig3 %>% mutate(q = "w") %>% rbind(df_vi_3)
+```
+
+```{r}
+#| include: false
+# write.csv(df_vi_4, "quarter_africa/quarter_slm_cr.csv")
+```
+
+
+
+## Quarter Combined Plot
+Finally, we can visualize the differences in the quadrant in mean share of local greening around SLM, mean share of local greening in CR and *P* values
+```{r}
+quarter_slm <- read.csv("quarter_africa/quarter_slm_cr.csv")
+all_africa <- read.csv("quarter_africa/allafrica_slm.csv") %>% 
+                  filter(type == "all")
+```
+
+```{r}
+#| label: "fig-fig3_quarter"
+#| fig-width: 5.5
+#| fig-height: 5
+#| fig-cap: "Mean and standard error(se) of the share of local greening in all SLM (left) and SLM subsets by project type (mid, right). Mean and se are given for each buffer size around the SLM. Stars show significant differences between SLM_LG and CR_LG from a one sided T test. Projects with a median NDVI > 0.15 were filtered out. Local greening based on NIRv and NDVI data from MOD13Q1.006. By quadrant (N, E, S, W)"
+
+quarter_slm_plot <- quarter_slm %>%
+                        rbind(.,all_africa) %>% 
+                        mutate(q = factor(q, levels = c("n","e","s","w","a")),
+                               key = factor(key, levels = c("r", "t", "s")),
+                               buffer = factor(buffer, levels = c("slm_5000",
+                                            "slm_4000",
+                                            "slm_3000",
+                                            "slm_2000",
+                                            "slm_1000",
+                                            "slm_0500",
+                                            "cr")))
+
+ggplot(data = quarter_slm_plot,
+       aes(y = mean_, x = buffer)) + 
+  geom_point(aes(shape = key), 
+             position = position_dodge(width = 0.5), size = 3,
+             na.rm = TRUE) +  # Added na.rm=TRUE to handle NA values
+  geom_errorbar(aes(ymin = mean_ - se_, ymax = mean_ + se_),
+                position = position_dodge(width = 0.5),
+                width = 0.2,
+                na.rm = TRUE) +  # Added na.rm=TRUE to handle NA values
+  scale_shape_manual(values = c(16, 17, 8),
+                   labels = c("SLM_LG\nmean", "CR_LG\nmean", "P <= 0.05")) +
+  scale_x_discrete(labels = c("5", "4", "3", "2", "1", "0.5", "cr")) +
+  labs(
+    title = "",
+    x = "Radius around Project Point[km]",
+    y = "Fraction of Greening Pixels around Point",
+    cex = 2,
+    shape = NULL
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = c(1.15,-.2),
+    legend.justification = c(2, -1),
+    legend.direction = "horizontal",
+    legend.box = "horizontal",
+    strip.text = element_text(size = 12),
+    legend.background = element_rect(fill = "white", color = "white"),
+    legend.box.margin = margin(0, 0, 0, 0)
+  ) +
+  guides(shape = guide_legend(nrow = 3, ncol = 1)) +
+  facet_wrap(~q, ncol = 3, labeller = labeller(q = c(
+    "e" = "East",
+    "n" = "North",
+    "s" = "South",
+    "w" = "West",
+    "a" = "Africa\ncomplete"
+  )))
+```
+```{r}
+#| include: false
+ # ggsave(
+ #   filename = "/home/student/PERSISTENT/capstone/figures/fig3_allQuarters.pdf",
+ #   plot = last_plot(),
+ #   width = 5.5,
+ #   height = 5,
+ #   units = "in"
+ # )
+```
+
+Why is east Africa dominating? can we find any hints?
+```{r}
+cat("NORTH\n")
+xtabs(data = slm_cr_n[["slm_0500"]], ~type)
+cat(rep("\n", 1),"EAST\n")
+xtabs(data = slm_cr_e[["slm_0500"]], ~type)
+cat(rep("\n", 1), "SOUTH\n")
+xtabs(data = slm_cr_s[["slm_0500"]], ~type)
+cat(rep("\n", 1), "WEST\n")
+xtabs(data = slm_cr_w[["slm_0500"]], ~type)
+```
+
+
+# III) Choose VI and buffer size per project type
+We calculate mean, se and *P* values for all combinations of VI, also we don't combine two VI but run the analysis with only one VI.
+## NIRv & NDVI
+```{r}
+#remove all object from before
+rm(list = ls())
+# SLM
+setwd("nirv_ndvi/")
+files <- list.files(pattern = "project", full.names = F)
+x <- sub(".*v12_(\\d{4}).*", "\\1", files)
+var_name_p <- paste0("slm_", x)
+slm_list <- lapply(seq_along(files), function(x){
+  res <- read.csv(files[x])
+  return(res)
+})
+names(slm_list) <- var_name_p #give df names for clarification
+
+index_ndvi_zero <- slm_list$slm_0500$index[slm_list$slm_0500$NDVImask == 0 |
+                                             is.na(slm_list$slm_0500$NDVImask)]
+slm_list <- lapply(slm_list, function(df) {
+  df <- df %>%
+    mutate(mean = round(mean, 10)) %>%
+    filter(NDVImask != 0 & !is.na(NDVImask)) %>%        # filtering out 0 and NA
+    # distinct(mean, definition, .keep_all = TRUE) %>%  # drop duplicates
+    mutate(slm_lg = mean) %>% 
+    select(definition, index, slm_lg, type) %>% 
+    arrange(index)
+
+  return(df)
+})
+
+# combined regions
+cr <- read.csv("mean_AI_country_LU_region_v12.csv") %>% 
+  filter(!index %in% index_ndvi_zero) %>%
+  group_by(index) %>%
+  summarise(cr_lg = mean(mean)) %>%
+  select(cr_lg,index)
+
+slm_cr <- lapply(slm_list, function(x){
+  x <- x %>% inner_join(y = cr, by = "index")
+})
+```
+### T test
+#### Create T test Function
+```{r}
+T_test_custom_simp <- function(slm_cr, alternative, print_results) {
+  # Initialize vectors for results
+  pvals <- numeric()
+  mean_x <- numeric()
+
+  # Populate pvals and mean_x
+  for (i in names(slm_cr)) {
+      t_result <- t.test(
+        slm_cr[[i]]$slm_lg,
+        slm_cr[[i]]$cr_lg,
+        paired = FALSE,
+        alternative = alternative,
+        var.equal = FALSE,
+        mu = 0
+      )
+
+      pvals[i] <- t_result$p.value
+      mean_x[i] <- t_result$estimate["mean of x"]
+  }
+
+  # Print results if print_results is TRUE
+  if (print_results) {
+    cat("P-values:\n")
+    print(pvals)
+    cat("\nMeans of x:\n")
+    print(mean_x)
+  }
+
+  # Prepare results
+  ttest_results <- data.frame(
+    pvals = pvals,
+    mean_x = mean_x
+  )
+
+  return(ttest_results)
+}
+
+```
+#### T test For all SLM
+```{r}
+all_prj_1sided <- T_test_custom_simp(slm_cr = slm_cr,
+                                     alternative = "greater",
+                                     print_results = T)
+```
+#### T test For Project Type Specific SLM Subset
+```{r}
+types_s <- unique(slm_cr$slm_0500$type)
+subnames <- paste0("type_",gsub("\\s+", "", types_s)) # deleting white spaces
+
+sub_ls <- list()
+
+for (i in types_s) {
+  types <- gsub("\\s+", "", i)
+  sub_ls[[types]] <- lapply(slm_cr, function(x){
+    x %>% filter(type == i)
+  })
+}
+```
+```{r}
+sub_ttest <- lapply(sub_ls, function(x){
+  T_test_custom_simp(slm_cr = x,
+                     alternative = "greater",
+                     print_results = F)
+})
+```
+### Calculate mean and se for SLM_LG and CR_LG
+```{r}
+# take mean lg_slm and lg_cr for all
+all_slm_sum <- sapply(slm_cr, function(x){
+  x <- x %>%  summarise(mean_slm_lg = mean(slm_lg),
+                        se_slm_lg = sd(slm_lg) / sqrt(n()),
+                        mean_cr_lg = mean(cr_lg),
+                        se_cr_lg = sd(cr_lg) / sqrt(n()))
+}, simplify = TRUE) %>%
+  t() %>%
+  as.data.frame() %>% 
+  rownames_to_column(var = "buffer") %>% 
+  pivot_longer(- buffer, values_to = "vals", names_to = "vars") 
+
+# bring the pvals in a similar format
+all_p_slm <- all_prj_1sided %>%
+  rownames_to_column(var = "buffer") %>% 
+  inner_join(y = all_slm_sum, by = "buffer") %>% 
+  mutate(type = "all") %>% 
+  select(type, everything(), -mean_x)
+  
+# take mean lg_slm and lg_cr for subsets
+sub_slm_ls_sum <- lapply(sub_ls, function(x){
+  lapply(x, function(y){
+    y <- y %>%  summarise(mean_slm_lg = mean(slm_lg),
+                          se_slm_lg = sd(slm_lg) / sqrt(n()),
+                          mean_cr_lg = mean(cr_lg),
+                          se_cr_lg = sd(cr_lg) / sqrt(n()))
+  })
+})
+
+# unwrap the lists and join them
+sub_slm_sum <- map_dfr(sub_slm_ls_sum,
+                       ~ map_dfr(.x, ~ .x, .id = "buffer"), .id = "type") %>% 
+  pivot_longer(-c(type, buffer), names_to = "vars", values_to = "vals")
+sub_p <- map_dfr(sub_ttest,
+                 ~ .x %>% rownames_to_column("buffer"), .id = "type") %>% 
+  select(-mean_x)
+
+sub_p_slm <- sub_p %>%
+  inner_join(sub_slm_sum, by = c("buffer", "type"))
+```
+### Final Plot
+```{r}
+fig3_pre1 <- rbind(sub_p_slm, all_p_slm) %>% 
+  mutate(buffer = case_when(vars == "mean_cr_lg" ~ "cr",
+                            vars == "se_cr_lg" ~ "cr",
+                            TRUE ~ buffer))
+
+fig3_pre2 <- fig3_pre1 %>%
+  distinct(type, buffer, vars, vals, .keep_all = T) %>% 
+  pivot_wider(id_cols = c(buffer, type, pvals),
+              names_from = vars,
+              values_from = vals)  %>% 
+  mutate(mean_ = as.numeric(coalesce(mean_slm_lg, mean_cr_lg)),
+         se_ = as.numeric(coalesce(se_slm_lg, se_cr_lg))) %>% 
+  select(mean_, se_, type, buffer, pvals) %>% 
+  mutate(shape = case_when(buffer == "cr" ~ buffer,
+                           TRUE ~ "slm")) %>% 
+  mutate(key = case_when(pvals <= 0.05 & shape == "slm" ~ "s",
+                         pvals > 0.05 & shape == "slm" ~ "r",
+                         shape == "cr" ~ "t"))
+
+# filter out all, revegetation, naturalregeneration
+fig3 <- fig3_pre2 %>%
+  filter(type %in% c("all", "revegetation", "naturalregeneration")) %>% 
+  mutate(type = factor(type,
+                       levels = c("all",
+                                  "revegetation",
+                                  "naturalregeneration")),
+         buffer = factor(buffer, levels = c("slm_5000",
+                                            "slm_4000",
+                                            "slm_3000",
+                                            "slm_2000",
+                                            "slm_1000",
+                                            "slm_0500",
+                                            "cr")))
+ 
+```
+```{r}
+#| label: "fig-fig3_nirvndvi"
+#| fig-width: 5.5
+#| fig-height: 5
+#| fig-cap: "Mean and standard error(se) of the share of local greening in all SLM (left) and SLM subsets by project type (mid, right). Mean and se are given for each buffer size around the SLM. Stars show significant differences between SLM_LG and CR_LG from a one sided T test. Projects with a median NDVI > 0.15 were filtered out. Local greening based on NIRv and NDVI data from MOD13Q1.006"
+
+ggplot(data = fig3,
+       aes(y = mean_, x = buffer)) + 
+  geom_point(aes(shape = key), 
+             position = position_dodge(width = 0.5), size = 3) +
+  geom_errorbar(aes(ymin = mean_ - se_, ymax = mean_ + se_),
+                position = position_dodge(width = 0.5),
+                width = 0.2) +
+  scale_shape_manual(values = c(16, 8, 17),
+                   labels = c("SLM_LG\nmean", "P <= 0.05", "CR_LG\nmean")) +
+  scale_x_discrete(labels = c("5", "4", "3", "2", "1", "0.5", "cr")) +
+  labs(
+    title = "",
+    x = "Radius around Project Point[km]",
+    y = "Fraction of Greening Pixels around Point",
+    cex = 2,
+    shape = NULL
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = c(0.5, 0.35),
+    legend.justification = c(2, -1),# Position legend at the top
+    legend.direction = "horizontal",  # Arrange items horizontally
+    legend.box = "horizontal",
+    strip.text = element_text(size = 12),
+    legend.background = element_rect(fill = "white", color = "white"), # White box
+    legend.box.margin = margin(0, 0, 0, 0)# Ensure the legend is a single box
+  ) +
+  guides(shape = guide_legend(nrow = 3, ncol = 1)) +  # Set legend layout
+  facet_wrap(~type, ncol = 3, labeller = labeller(type = c(
+  "naturalregeneration" = "Natural Regeneration",
+  "revegetation" = "Revegetation",
+  "all" = "Sustainable Land\nManagement"
+  )))
+```
+```{r}
+#| include: false
+
+
+# ggsave(
+#   filename = "fig3_nirvndvi.pdf",
+#   plot = last_plot(),
+#   width = 5.5,
+#   height = 5,
+#   units = "in"
+# )
+```
+### Store values in data frame
+For every combination of VI, the values are stored in a data frame
+```{r}
+df_vi_1 <- fig3 %>% select(-shape, -key) %>% mutate(vi = "NIRv & NDVI")
+df_vi_1
+```
+The same analysis is done for all possible combinations of VI. These are not displayed in this  document but run in the background. The source code is available in the same Github folder as this document.
+
+## NIRv
+```{r}
+#| include: false
+#| label: "fig-fig3_nirv"
+#| fig-width: 5.5
+#| fig-height: 5
+#| fig-cap: "Mean and standard error(se) of the share of local greening in all SLM (left) and SLM subsets by project type (mid, right). Mean and se are given for each buffer size around the SLM. Stars show significant differences between SLM_LG and CR_LG from a one sided T test. Projects with a median NDVI > 0.15 were filtered out. Local greening based on NIRv and NDVI data from MOD13Q1.006"
+
+#remove all object from before
+# SLM
+setwd("nirv/")
+files <- list.files(pattern = "project", full.names = F)
+x <- sub(".*v12_(\\d{4}).*", "\\1", files)
+var_name_p <- paste0("slm_", x)
+slm_list <- lapply(seq_along(files), function(x){
+  res <- read.csv(files[x])
+  return(res)
+})
+names(slm_list) <- var_name_p #give df names for clarification
+
+index_ndvi_zero <- slm_list$slm_0500$index[slm_list$slm_0500$NDVImask == 0 |
+                                             is.na(slm_list$slm_0500$NDVImask)]
+slm_list <- lapply(slm_list, function(df) {
+  df <- df %>%
+    mutate(mean = round(mean, 10)) %>%
+    filter(NDVImask != 0 & !is.na(NDVImask)) %>%        # filtering out 0 and NA
+    # distinct(mean, definition, .keep_all = TRUE) %>%  # drop duplicates
+    mutate(slm_lg = mean) %>% 
+    select(definition, index, slm_lg, type) %>% 
+    arrange(index)
+
+  return(df)
+})
+
+# combined regions
+cr <- read.csv("mean_AI_country_LU_region_v12.csv") %>% 
+  filter(!index %in% index_ndvi_zero) %>%
+  group_by(index) %>%
+  summarise(cr_lg = mean(mean)) %>%
+  select(cr_lg,index)
+
+slm_cr <- lapply(slm_list, function(x){
+  x <- x %>% inner_join(y = cr, by = "index")
+})
+
+### T test
+#### T test For all SLM
+
+all_prj_1sided <- T_test_custom_simp(slm_cr = slm_cr,
+                                     alternative = "greater",
+                                     print_results = F)
+
+#### T test For Project Type Specific SLM Subset
+
+types_s <- unique(slm_cr$slm_0500$type)
+subnames <- paste0("type_",gsub("\\s+", "", types_s)) # deleting white spaces
+
+sub_ls <- list()
+
+for (i in types_s) {
+  types <- gsub("\\s+", "", i)
+  sub_ls[[types]] <- lapply(slm_cr, function(x){
+    x %>% filter(type == i)
+  })
+}
+
+
+sub_ttest <- lapply(sub_ls, function(x){
+  T_test_custom_simp(slm_cr = x,
+                     alternative = "greater",
+                     print_results = F)
+})
+
+### Calculate mean and se for SLM_LG and CR_LG
+
+# take mean lg_slm and lg_cr for all
+all_slm_sum <- sapply(slm_cr, function(x){
+  x <- x %>%  summarise(mean_slm_lg = mean(slm_lg),
+                        se_slm_lg = sd(slm_lg) / sqrt(n()),
+                        mean_cr_lg = mean(cr_lg),
+                        se_cr_lg = sd(cr_lg) / sqrt(n()))
+}, simplify = TRUE) %>%
+  t() %>%
+  as.data.frame() %>% 
+  rownames_to_column(var = "buffer") %>% 
+  pivot_longer(- buffer, values_to = "vals", names_to = "vars") 
+
+# bring the pvals in a similar format
+all_p_slm <- all_prj_1sided %>%
+  rownames_to_column(var = "buffer") %>% 
+  inner_join(y = all_slm_sum, by = "buffer") %>% 
+  mutate(type = "all") %>% 
+  select(type, everything(), -mean_x)
+  
+# take mean lg_slm and lg_cr for subsets
+sub_slm_ls_sum <- lapply(sub_ls, function(x){
+  lapply(x, function(y){
+    y <- y %>%  summarise(mean_slm_lg = mean(slm_lg),
+                          se_slm_lg = sd(slm_lg) / sqrt(n()),
+                          mean_cr_lg = mean(cr_lg),
+                          se_cr_lg = sd(cr_lg) / sqrt(n()))
+  })
+})
+
+# unwrap the lists and join them
+sub_slm_sum <- map_dfr(sub_slm_ls_sum,
+                       ~ map_dfr(.x, ~ .x, .id = "buffer"), .id = "type") %>% 
+  pivot_longer(-c(type, buffer), names_to = "vars", values_to = "vals")
+sub_p <- map_dfr(sub_ttest,
+                 ~ .x %>% rownames_to_column("buffer"), .id = "type") %>% 
+  select(-mean_x)
+
+sub_p_slm <- sub_p %>%
+  inner_join(sub_slm_sum, by = c("buffer", "type"))
+
+### Final Plot
+
+fig3_pre1 <- rbind(sub_p_slm, all_p_slm) %>% 
+  mutate(buffer = case_when(vars == "mean_cr_lg" ~ "cr",
+                            vars == "se_cr_lg" ~ "cr",
+                            TRUE ~ buffer))
+
+fig3_pre2 <- fig3_pre1 %>%
+  distinct(type, buffer, vars, vals, .keep_all = T) %>% 
+  pivot_wider(id_cols = c(buffer, type, pvals),
+              names_from = vars,
+              values_from = vals)  %>% 
+  mutate(mean_ = as.numeric(coalesce(mean_slm_lg, mean_cr_lg)),
+         se_ = as.numeric(coalesce(se_slm_lg, se_cr_lg))) %>% 
+  select(mean_, se_, type, buffer, pvals) %>% 
+  mutate(shape = case_when(buffer == "cr" ~ buffer,
+                           TRUE ~ "slm")) %>% 
+  mutate(key = case_when(pvals <= 0.05 & shape == "slm" ~ "s",
+                         pvals > 0.05 & shape == "slm" ~ "r",
+                         shape == "cr" ~ "t"))
+
+# filter out all, revegetation, naturalregeneration
+fig3 <- fig3_pre2 %>%
+  filter(type %in% c("all", "revegetation", "naturalregeneration")) %>% 
+  mutate(type = factor(type,
+                       levels = c("all",
+                                  "revegetation",
+                                  "naturalregeneration")),
+         buffer = factor(buffer, levels = c("slm_5000",
+                                            "slm_4000",
+                                            "slm_3000",
+                                            "slm_2000",
+                                            "slm_1000",
+                                            "slm_0500",
+                                            "cr")))
+ 
+
+ggplot(data = fig3,
+       aes(y = mean_, x = buffer)) + 
+  geom_point(aes(shape = key), 
+             position = position_dodge(width = 0.5), size = 3) +
+  geom_errorbar(aes(ymin = mean_ - se_, ymax = mean_ + se_),
+                position = position_dodge(width = 0.5),
+                width = 0.2) +
+  scale_shape_manual(values = c(16, 8, 17),
+                   labels = c("SLM_LG\nmean", "P <= 0.05", "CR_LG\nmean")) +
+  scale_x_discrete(labels = c("5", "4", "3", "2", "1", "0.5", "cr")) +
+  labs(
+    title = "",
+    x = "Radius around Project Point[km]",
+    y = "Fraction of Greening Pixels around Point",
+    cex = 2,
+    shape = NULL
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = c(0.5, 0.35),
+    legend.justification = c(2, -1),# Position legend at the top
+    legend.direction = "horizontal",  # Arrange items horizontally
+    legend.box = "horizontal",
+    strip.text = element_text(size = 12),
+    legend.background = element_rect(fill = "white", color = "white"), # White box
+    legend.box.margin = margin(0, 0, 0, 0)# Ensure the legend is a single box
+  ) +
+  guides(shape = guide_legend(nrow = 3, ncol = 1)) +  # Set legend layout
+  facet_wrap(~type, ncol = 3, labeller = labeller(type = c(
+  "naturalregeneration" = "Natural Regeneration",
+  "revegetation" = "Revegetation",
+  "all" = "Sustainable Land\nManagement"
+  )))
+
+# ggsave(
+#   filename = "../fig3_nirv.pdf",
+#   plot = last_plot(),
+#   width = 5.5,
+#   height = 5,
+#   units = "in"
+# )
+
+df_vi_i <- fig3 %>% select(-shape, -key) %>% mutate(vi = "NIRv")
+df_vi_2 <- rbind(df_vi_1, df_vi_i)
+```
+
+## NIRv & EVI
+```{r}
+#| include: false
+#| label: "fig-fig3_nirvevi"
+#| fig-width: 5.5
+#| fig-height: 5
+#| fig-cap: "Mean and standard error(se) of the share of local greening in all SLM (left) and SLM subsets by project type (mid, right). Mean and se are given for each buffer size around the SLM. Stars show significant differences between SLM_LG and CR_LG from a one sided T test. Projects with a median NDVI > 0.15 were filtered out. Local greening based on NIRv and NDVI data from MOD13Q1.006"
+
+#remove all object from before
+# SLM
+setwd("nirv_evi/")
+files <- list.files(pattern = "project", full.names = F)
+x <- sub(".*v12_(\\d{4}).*", "\\1", files)
+var_name_p <- paste0("slm_", x)
+slm_list <- lapply(seq_along(files), function(x){
+  res <- read.csv(files[x])
+  return(res)
+})
+names(slm_list) <- var_name_p #give df names for clarification
+
+index_ndvi_zero <- slm_list$slm_0500$index[slm_list$slm_0500$NDVImask == 0 |
+                                             is.na(slm_list$slm_0500$NDVImask)]
+slm_list <- lapply(slm_list, function(df) {
+  df <- df %>%
+    mutate(mean = round(mean, 10)) %>%
+    filter(NDVImask != 0 & !is.na(NDVImask)) %>%        # filtering out 0 and NA
+    # distinct(mean, definition, .keep_all = TRUE) %>%  # drop duplicates
+    mutate(slm_lg = mean) %>% 
+    select(definition, index, slm_lg, type) %>% 
+    arrange(index)
+
+  return(df)
+})
+
+# combined regions
+cr <- read.csv("mean_AI_country_LU_region_v12.csv") %>% 
+  filter(!index %in% index_ndvi_zero) %>%
+  group_by(index) %>%
+  summarise(cr_lg = mean(mean)) %>%
+  select(cr_lg,index)
+
+slm_cr <- lapply(slm_list, function(x){
+  x <- x %>% inner_join(y = cr, by = "index")
+})
+
+### T test
+#### T test For all SLM
+
+all_prj_1sided <- T_test_custom_simp(slm_cr = slm_cr,
+                                     alternative = "greater",
+                                     print_results = F)
+
+#### T test For Project Type Specific SLM Subset
+
+types_s <- unique(slm_cr$slm_0500$type)
+subnames <- paste0("type_",gsub("\\s+", "", types_s)) # deleting white spaces
+
+sub_ls <- list()
+
+for (i in types_s) {
+  types <- gsub("\\s+", "", i)
+  sub_ls[[types]] <- lapply(slm_cr, function(x){
+    x %>% filter(type == i)
+  })
+}
+
+
+sub_ttest <- lapply(sub_ls, function(x){
+  T_test_custom_simp(slm_cr = x,
+                     alternative = "greater",
+                     print_results = F)
+})
+
+### Calculate mean and se for SLM_LG and CR_LG
+
+# take mean lg_slm and lg_cr for all
+all_slm_sum <- sapply(slm_cr, function(x){
+  x <- x %>%  summarise(mean_slm_lg = mean(slm_lg),
+                        se_slm_lg = sd(slm_lg) / sqrt(n()),
+                        mean_cr_lg = mean(cr_lg),
+                        se_cr_lg = sd(cr_lg) / sqrt(n()))
+}, simplify = TRUE) %>%
+  t() %>%
+  as.data.frame() %>% 
+  rownames_to_column(var = "buffer") %>% 
+  pivot_longer(- buffer, values_to = "vals", names_to = "vars") 
+
+# bring the pvals in a similar format
+all_p_slm <- all_prj_1sided %>%
+  rownames_to_column(var = "buffer") %>% 
+  inner_join(y = all_slm_sum, by = "buffer") %>% 
+  mutate(type = "all") %>% 
+  select(type, everything(), -mean_x)
+  
+# take mean lg_slm and lg_cr for subsets
+sub_slm_ls_sum <- lapply(sub_ls, function(x){
+  lapply(x, function(y){
+    y <- y %>%  summarise(mean_slm_lg = mean(slm_lg),
+                          se_slm_lg = sd(slm_lg) / sqrt(n()),
+                          mean_cr_lg = mean(cr_lg),
+                          se_cr_lg = sd(cr_lg) / sqrt(n()))
+  })
+})
+
+# unwrap the lists and join them
+sub_slm_sum <- map_dfr(sub_slm_ls_sum,
+                       ~ map_dfr(.x, ~ .x, .id = "buffer"), .id = "type") %>% 
+  pivot_longer(-c(type, buffer), names_to = "vars", values_to = "vals")
+sub_p <- map_dfr(sub_ttest,
+                 ~ .x %>% rownames_to_column("buffer"), .id = "type") %>% 
+  select(-mean_x)
+
+sub_p_slm <- sub_p %>%
+  inner_join(sub_slm_sum, by = c("buffer", "type"))
+
+### Final Plot
+
+fig3_pre1 <- rbind(sub_p_slm, all_p_slm) %>% 
+  mutate(buffer = case_when(vars == "mean_cr_lg" ~ "cr",
+                            vars == "se_cr_lg" ~ "cr",
+                            TRUE ~ buffer))
+
+fig3_pre2 <- fig3_pre1 %>%
+  distinct(type, buffer, vars, vals, .keep_all = T) %>% 
+  pivot_wider(id_cols = c(buffer, type, pvals),
+              names_from = vars,
+              values_from = vals)  %>% 
+  mutate(mean_ = as.numeric(coalesce(mean_slm_lg, mean_cr_lg)),
+         se_ = as.numeric(coalesce(se_slm_lg, se_cr_lg))) %>% 
+  select(mean_, se_, type, buffer, pvals) %>% 
+  mutate(shape = case_when(buffer == "cr" ~ buffer,
+                           TRUE ~ "slm")) %>% 
+  mutate(key = case_when(pvals <= 0.05 & shape == "slm" ~ "s",
+                         pvals > 0.05 & shape == "slm" ~ "r",
+                         shape == "cr" ~ "t"))
+
+# filter out all, revegetation, naturalregeneration
+fig3 <- fig3_pre2 %>%
+  filter(type %in% c("all", "revegetation", "naturalregeneration")) %>% 
+  mutate(type = factor(type,
+                       levels = c("all",
+                                  "revegetation",
+                                  "naturalregeneration")),
+         buffer = factor(buffer, levels = c("slm_5000",
+                                            "slm_4000",
+                                            "slm_3000",
+                                            "slm_2000",
+                                            "slm_1000",
+                                            "slm_0500",
+                                            "cr")))
+ 
+
+ggplot(data = fig3,
+       aes(y = mean_, x = buffer)) + 
+  geom_point(aes(shape = key), 
+             position = position_dodge(width = 0.5), size = 3) +
+  geom_errorbar(aes(ymin = mean_ - se_, ymax = mean_ + se_),
+                position = position_dodge(width = 0.5),
+                width = 0.2) +
+  scale_shape_manual(values = c(16, 8, 17),
+                   labels = c("SLM_LG\nmean", "P <= 0.05", "CR_LG\nmean")) +
+  scale_x_discrete(labels = c("5", "4", "3", "2", "1", "0.5", "cr")) +
+  labs(
+    title = "",
+    x = "Radius around Project Point[km]",
+    y = "Fraction of Greening Pixels around Point",
+    cex = 2,
+    shape = NULL
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = c(0.5, 0.35),
+    legend.justification = c(2, -1),# Position legend at the top
+    legend.direction = "horizontal",  # Arrange items horizontally
+    legend.box = "horizontal",
+    strip.text = element_text(size = 12),
+    legend.background = element_rect(fill = "white", color = "white"), # White box
+    legend.box.margin = margin(0, 0, 0, 0)# Ensure the legend is a single box
+  ) +
+  guides(shape = guide_legend(nrow = 3, ncol = 1)) +  # Set legend layout
+  facet_wrap(~type, ncol = 3, labeller = labeller(type = c(
+  "naturalregeneration" = "Natural Regeneration",
+  "revegetation" = "Revegetation",
+  "all" = "Sustainable Land\nManagement"
+  )))
+
+# ggsave(
+#   filename = "../fig3_nirvevi.pdf",
+#   plot = last_plot(),
+#   width = 5.5,
+#   height = 5,
+#   units = "in"
+# )
+
+df_vi_i <- fig3 %>%select(-shape, -key) %>% mutate(vi = "NIRv & EVI")
+df_vi_3 <- rbind(df_vi_2, df_vi_i)
+```
+## kNDVI
+```{r}
+#| include: false
+#| label: "fig-fig3_kndvi"
+#| fig-width: 5.5
+#| fig-height: 5
+#| fig-cap: "Mean and standard error(se) of the share of local greening in all SLM (left) and SLM subsets by project type (mid, right). Mean and se are given for each buffer size around the SLM. Stars show significant differences between SLM_LG and CR_LG from a one sided T test. Projects with a median NDVI > 0.15 were filtered out. Local greening based on NIRv and NDVI data from MOD13Q1.006"
+
+#remove all object from before
+# SLM
+setwd("kndvi/")
+files <- list.files(pattern = "project", full.names = F)
+x <- sub(".*v12_(\\d{4}).*", "\\1", files)
+var_name_p <- paste0("slm_", x)
+slm_list <- lapply(seq_along(files), function(x){
+  res <- read.csv(files[x])
+  return(res)
+})
+names(slm_list) <- var_name_p #give df names for clarification
+
+index_ndvi_zero <- slm_list$slm_0500$index[slm_list$slm_0500$NDVImask == 0 |
+                                             is.na(slm_list$slm_0500$NDVImask)]
+slm_list <- lapply(slm_list, function(df) {
+  df <- df %>%
+    mutate(mean = round(mean, 10)) %>%
+    filter(NDVImask != 0 & !is.na(NDVImask)) %>%        # filtering out 0 and NA
+    # distinct(mean, definition, .keep_all = TRUE) %>%  # drop duplicates
+    mutate(slm_lg = mean) %>% 
+    select(definition, index, slm_lg, type) %>% 
+    arrange(index)
+
+  return(df)
+})
+
+# combined regions
+cr <- read.csv("mean_AI_country_LU_region_v12.csv") %>% 
+  filter(!index %in% index_ndvi_zero) %>%
+  group_by(index) %>%
+  summarise(cr_lg = mean(mean)) %>%
+  select(cr_lg,index)
+
+slm_cr <- lapply(slm_list, function(x){
+  x <- x %>% inner_join(y = cr, by = "index")
+})
+
+### T test
+#### T test For all SLM
+
+all_prj_1sided <- T_test_custom_simp(slm_cr = slm_cr,
+                                     alternative = "greater",
+                                     print_results = F)
+
+#### T test For Project Type Specific SLM Subset
+
+types_s <- unique(slm_cr$slm_0500$type)
+subnames <- paste0("type_",gsub("\\s+", "", types_s)) # deleting white spaces
+
+sub_ls <- list()
+
+for (i in types_s) {
+  types <- gsub("\\s+", "", i)
+  sub_ls[[types]] <- lapply(slm_cr, function(x){
+    x %>% filter(type == i)
+  })
+}
+
+
+sub_ttest <- lapply(sub_ls, function(x){
+  T_test_custom_simp(slm_cr = x,
+                     alternative = "greater",
+                     print_results = F)
+})
+
+### Calculate mean and se for SLM_LG and CR_LG
+
+# take mean lg_slm and lg_cr for all
+all_slm_sum <- sapply(slm_cr, function(x){
+  x <- x %>%  summarise(mean_slm_lg = mean(slm_lg),
+                        se_slm_lg = sd(slm_lg) / sqrt(n()),
+                        mean_cr_lg = mean(cr_lg),
+                        se_cr_lg = sd(cr_lg) / sqrt(n()))
+}, simplify = TRUE) %>%
+  t() %>%
+  as.data.frame() %>% 
+  rownames_to_column(var = "buffer") %>% 
+  pivot_longer(- buffer, values_to = "vals", names_to = "vars") 
+
+# bring the pvals in a similar format
+all_p_slm <- all_prj_1sided %>%
+  rownames_to_column(var = "buffer") %>% 
+  inner_join(y = all_slm_sum, by = "buffer") %>% 
+  mutate(type = "all") %>% 
+  select(type, everything(), -mean_x)
+  
+# take mean lg_slm and lg_cr for subsets
+sub_slm_ls_sum <- lapply(sub_ls, function(x){
+  lapply(x, function(y){
+    y <- y %>%  summarise(mean_slm_lg = mean(slm_lg),
+                          se_slm_lg = sd(slm_lg) / sqrt(n()),
+                          mean_cr_lg = mean(cr_lg),
+                          se_cr_lg = sd(cr_lg) / sqrt(n()))
+  })
+})
+
+# unwrap the lists and join them
+sub_slm_sum <- map_dfr(sub_slm_ls_sum,
+                       ~ map_dfr(.x, ~ .x, .id = "buffer"), .id = "type") %>% 
+  pivot_longer(-c(type, buffer), names_to = "vars", values_to = "vals")
+sub_p <- map_dfr(sub_ttest,
+                 ~ .x %>% rownames_to_column("buffer"), .id = "type") %>% 
+  select(-mean_x)
+
+sub_p_slm <- sub_p %>%
+  inner_join(sub_slm_sum, by = c("buffer", "type"))
+
+### Final Plot
+
+fig3_pre1 <- rbind(sub_p_slm, all_p_slm) %>% 
+  mutate(buffer = case_when(vars == "mean_cr_lg" ~ "cr",
+                            vars == "se_cr_lg" ~ "cr",
+                            TRUE ~ buffer))
+
+fig3_pre2 <- fig3_pre1 %>%
+  distinct(type, buffer, vars, vals, .keep_all = T) %>% 
+  pivot_wider(id_cols = c(buffer, type, pvals),
+              names_from = vars,
+              values_from = vals)  %>% 
+  mutate(mean_ = as.numeric(coalesce(mean_slm_lg, mean_cr_lg)),
+         se_ = as.numeric(coalesce(se_slm_lg, se_cr_lg))) %>% 
+  select(mean_, se_, type, buffer, pvals) %>% 
+  mutate(shape = case_when(buffer == "cr" ~ buffer,
+                           TRUE ~ "slm")) %>% 
+  mutate(key = case_when(pvals <= 0.05 & shape == "slm" ~ "s",
+                         pvals > 0.05 & shape == "slm" ~ "r",
+                         shape == "cr" ~ "t"))
+
+# filter out all, revegetation, naturalregeneration
+fig3 <- fig3_pre2 %>%
+  filter(type %in% c("all", "revegetation", "naturalregeneration")) %>% 
+  mutate(type = factor(type,
+                       levels = c("all",
+                                  "revegetation",
+                                  "naturalregeneration")),
+         buffer = factor(buffer, levels = c("slm_5000",
+                                            "slm_4000",
+                                            "slm_3000",
+                                            "slm_2000",
+                                            "slm_1000",
+                                            "slm_0500",
+                                            "cr")))
+ 
+
+ggplot(data = fig3,
+       aes(y = mean_, x = buffer)) + 
+  geom_point(aes(shape = key), 
+             position = position_dodge(width = 0.5), size = 3) +
+  geom_errorbar(aes(ymin = mean_ - se_, ymax = mean_ + se_),
+                position = position_dodge(width = 0.5),
+                width = 0.2) +
+  scale_shape_manual(values = c(16, 8, 17),
+                   labels = c("SLM_LG\nmean", "P <= 0.05", "CR_LG\nmean")) +
+  scale_x_discrete(labels = c("5", "4", "3", "2", "1", "0.5", "cr")) +
+  labs(
+    title = "",
+    x = "Radius around Project Point[km]",
+    y = "Fraction of Greening Pixels around Point",
+    cex = 2,
+    shape = NULL
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = c(0.5, 0.35),
+    legend.justification = c(2, -1),# Position legend at the top
+    legend.direction = "horizontal",  # Arrange items horizontally
+    legend.box = "horizontal",
+    strip.text = element_text(size = 12),
+    legend.background = element_rect(fill = "white", color = "white"), # White box
+    legend.box.margin = margin(0, 0, 0, 0)# Ensure the legend is a single box
+  ) +
+  guides(shape = guide_legend(nrow = 3, ncol = 1)) +  # Set legend layout
+  facet_wrap(~type, ncol = 3, labeller = labeller(type = c(
+  "naturalregeneration" = "Natural Regeneration",
+  "revegetation" = "Revegetation",
+  "all" = "Sustainable Land\nManagement"
+  )))
+
+# ggsave(
+#   filename = "../fig3_kndvi.pdf",
+#   plot = last_plot(),
+#   width = 5.5,
+#   height = 5,
+#   units = "in"
+# )
+df_vi_i <- fig3 %>%select(-shape, -key) %>% mutate(vi = "kNDVI")
+df_vi_4 <- rbind(df_vi_3, df_vi_i)
+```
+## kNDVI & NDVI
+```{r}
+#| include: false
+#| label: "fig-fig3_kndvindvi"
+#| fig-width: 5.5
+#| fig-height: 5
+#| fig-cap: "Mean and standard error(se) of the share of local greening in all SLM (left) and SLM subsets by project type (mid, right). Mean and se are given for each buffer size around the SLM. Stars show significant differences between SLM_LG and CR_LG from a one sided T test. Projects with a median NDVI > 0.15 were filtered out. Local greening based on NIRv and NDVI data from MOD13Q1.006"
+
+#remove all object from before
+# SLM
+setwd("kndvi_ndvi/")
+files <- list.files(pattern = "project", full.names = F)
+x <- sub(".*v12_(\\d{4}).*", "\\1", files)
+var_name_p <- paste0("slm_", x)
+slm_list <- lapply(seq_along(files), function(x){
+  res <- read.csv(files[x])
+  return(res)
+})
+names(slm_list) <- var_name_p #give df names for clarification
+
+index_ndvi_zero <- slm_list$slm_0500$index[slm_list$slm_0500$NDVImask == 0 |
+                                             is.na(slm_list$slm_0500$NDVImask)]
+slm_list <- lapply(slm_list, function(df) {
+  df <- df %>%
+    mutate(mean = round(mean, 10)) %>%
+    filter(NDVImask != 0 & !is.na(NDVImask)) %>%        # filtering out 0 and NA
+    # distinct(mean, definition, .keep_all = TRUE) %>%  # drop duplicates
+    mutate(slm_lg = mean) %>% 
+    select(definition, index, slm_lg, type) %>% 
+    arrange(index)
+
+  return(df)
+})
+
+# combined regions
+cr <- read.csv("mean_AI_country_LU_region_v12.csv") %>% 
+  filter(!index %in% index_ndvi_zero) %>%
+  group_by(index) %>%
+  summarise(cr_lg = mean(mean)) %>%
+  select(cr_lg,index)
+
+slm_cr <- lapply(slm_list, function(x){
+  x <- x %>% inner_join(y = cr, by = "index")
+})
+
+### T test
+#### T test For all SLM
+
+all_prj_1sided <- T_test_custom_simp(slm_cr = slm_cr,
+                                     alternative = "greater",
+                                     print_results = F)
+
+#### T test For Project Type Specific SLM Subset
+
+types_s <- unique(slm_cr$slm_0500$type)
+subnames <- paste0("type_",gsub("\\s+", "", types_s)) # deleting white spaces
+
+sub_ls <- list()
+
+for (i in types_s) {
+  types <- gsub("\\s+", "", i)
+  sub_ls[[types]] <- lapply(slm_cr, function(x){
+    x %>% filter(type == i)
+  })
+}
+
+
+sub_ttest <- lapply(sub_ls, function(x){
+  T_test_custom_simp(slm_cr = x,
+                     alternative = "greater",
+                     print_results = F)
+})
+
+### Calculate mean and se for SLM_LG and CR_LG
+
+# take mean lg_slm and lg_cr for all
+all_slm_sum <- sapply(slm_cr, function(x){
+  x <- x %>%  summarise(mean_slm_lg = mean(slm_lg),
+                        se_slm_lg = sd(slm_lg) / sqrt(n()),
+                        mean_cr_lg = mean(cr_lg),
+                        se_cr_lg = sd(cr_lg) / sqrt(n()))
+}, simplify = TRUE) %>%
+  t() %>%
+  as.data.frame() %>% 
+  rownames_to_column(var = "buffer") %>% 
+  pivot_longer(- buffer, values_to = "vals", names_to = "vars") 
+
+# bring the pvals in a similar format
+all_p_slm <- all_prj_1sided %>%
+  rownames_to_column(var = "buffer") %>% 
+  inner_join(y = all_slm_sum, by = "buffer") %>% 
+  mutate(type = "all") %>% 
+  select(type, everything(), -mean_x)
+  
+# take mean lg_slm and lg_cr for subsets
+sub_slm_ls_sum <- lapply(sub_ls, function(x){
+  lapply(x, function(y){
+    y <- y %>%  summarise(mean_slm_lg = mean(slm_lg),
+                          se_slm_lg = sd(slm_lg) / sqrt(n()),
+                          mean_cr_lg = mean(cr_lg),
+                          se_cr_lg = sd(cr_lg) / sqrt(n()))
+  })
+})
+
+# unwrap the lists and join them
+sub_slm_sum <- map_dfr(sub_slm_ls_sum,
+                       ~ map_dfr(.x, ~ .x, .id = "buffer"), .id = "type") %>% 
+  pivot_longer(-c(type, buffer), names_to = "vars", values_to = "vals")
+sub_p <- map_dfr(sub_ttest,
+                 ~ .x %>% rownames_to_column("buffer"), .id = "type") %>% 
+  select(-mean_x)
+
+sub_p_slm <- sub_p %>%
+  inner_join(sub_slm_sum, by = c("buffer", "type"))
+
+### Final Plot
+
+fig3_pre1 <- rbind(sub_p_slm, all_p_slm) %>% 
+  mutate(buffer = case_when(vars == "mean_cr_lg" ~ "cr",
+                            vars == "se_cr_lg" ~ "cr",
+                            TRUE ~ buffer))
+
+fig3_pre2 <- fig3_pre1 %>%
+  distinct(type, buffer, vars, vals, .keep_all = T) %>% 
+  pivot_wider(id_cols = c(buffer, type, pvals),
+              names_from = vars,
+              values_from = vals)  %>% 
+  mutate(mean_ = as.numeric(coalesce(mean_slm_lg, mean_cr_lg)),
+         se_ = as.numeric(coalesce(se_slm_lg, se_cr_lg))) %>% 
+  select(mean_, se_, type, buffer, pvals) %>% 
+  mutate(shape = case_when(buffer == "cr" ~ buffer,
+                           TRUE ~ "slm")) %>% 
+  mutate(key = case_when(pvals <= 0.05 & shape == "slm" ~ "s",
+                         pvals > 0.05 & shape == "slm" ~ "r",
+                         shape == "cr" ~ "t"))
+
+# filter out all, revegetation, naturalregeneration
+fig3 <- fig3_pre2 %>%
+  filter(type %in% c("all", "revegetation", "naturalregeneration")) %>% 
+  mutate(type = factor(type,
+                       levels = c("all",
+                                  "revegetation",
+                                  "naturalregeneration")),
+         buffer = factor(buffer, levels = c("slm_5000",
+                                            "slm_4000",
+                                            "slm_3000",
+                                            "slm_2000",
+                                            "slm_1000",
+                                            "slm_0500",
+                                            "cr")))
+ 
+
+ggplot(data = fig3,
+       aes(y = mean_, x = buffer)) + 
+  geom_point(aes(shape = key), 
+             position = position_dodge(width = 0.5), size = 3) +
+  geom_errorbar(aes(ymin = mean_ - se_, ymax = mean_ + se_),
+                position = position_dodge(width = 0.5),
+                width = 0.2) +
+  scale_shape_manual(values = c(16, 8, 17),
+                   labels = c("SLM_LG\nmean", "P <= 0.05", "CR_LG\nmean")) +
+  scale_x_discrete(labels = c("5", "4", "3", "2", "1", "0.5", "cr")) +
+  labs(
+    title = "",
+    x = "Radius around Project Point[km]",
+    y = "Fraction of Greening Pixels around Point",
+    cex = 2,
+    shape = NULL
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = c(0.5, 0.35),
+    legend.justification = c(2, -1),# Position legend at the top
+    legend.direction = "horizontal",  # Arrange items horizontally
+    legend.box = "horizontal",
+    strip.text = element_text(size = 12),
+    legend.background = element_rect(fill = "white", color = "white"), # White box
+    legend.box.margin = margin(0, 0, 0, 0)# Ensure the legend is a single box
+  ) +
+  guides(shape = guide_legend(nrow = 3, ncol = 1)) +  # Set legend layout
+  facet_wrap(~type, ncol = 3, labeller = labeller(type = c(
+  "naturalregeneration" = "Natural Regeneration",
+  "revegetation" = "Revegetation",
+  "all" = "Sustainable Land\nManagement"
+  )))
+
+# ggsave(
+#   filename = "../fig3_kndvindvi.pdf",
+#   plot = last_plot(),
+#   width = 5.5,
+#   height = 5,
+#   units = "in"
+# )
+df_vi_i <- fig3 %>%select(-shape, -key) %>% mutate(vi = "kNDVI & NDVI")
+df_vi_5 <- rbind(df_vi_4, df_vi_i)
+```
+## kNDVI & EVI
+```{r}
+#| include: false
+#| label: "fig-fig3_kndvievi"
+#| fig-width: 5.5
+#| fig-height: 5
+#| fig-cap: "Mean and standard error(se) of the share of local greening in all SLM (left) and SLM subsets by project type (mid, right). Mean and se are given for each buffer size around the SLM. Stars show significant differences between SLM_LG and CR_LG from a one sided T test. Projects with a median NDVI > 0.15 were filtered out. Local greening based on NIRv and NDVI data from MOD13Q1.006"
+
+#remove all object from before
+# SLM
+setwd("kndvi_evi/")
+files <- list.files(pattern = "project", full.names = F)
+x <- sub(".*v12_(\\d{4}).*", "\\1", files)
+var_name_p <- paste0("slm_", x)
+slm_list <- lapply(seq_along(files), function(x){
+  res <- read.csv(files[x])
+  return(res)
+})
+names(slm_list) <- var_name_p #give df names for clarification
+
+index_ndvi_zero <- slm_list$slm_0500$index[slm_list$slm_0500$NDVImask == 0 |
+                                             is.na(slm_list$slm_0500$NDVImask)]
+slm_list <- lapply(slm_list, function(df) {
+  df <- df %>%
+    mutate(mean = round(mean, 10)) %>%
+    filter(NDVImask != 0 & !is.na(NDVImask)) %>%        # filtering out 0 and NA
+    # distinct(mean, definition, .keep_all = TRUE) %>%  # drop duplicates
+    mutate(slm_lg = mean) %>% 
+    select(definition, index, slm_lg, type) %>% 
+    arrange(index)
+
+  return(df)
+})
+
+# combined regions
+cr <- read.csv("mean_AI_country_LU_region_v12.csv") %>% 
+  filter(!index %in% index_ndvi_zero) %>%
+  group_by(index) %>%
+  summarise(cr_lg = mean(mean)) %>%
+  select(cr_lg,index)
+
+slm_cr <- lapply(slm_list, function(x){
+  x <- x %>% inner_join(y = cr, by = "index")
+})
+
+### T test
+#### T test For all SLM
+
+all_prj_1sided <- T_test_custom_simp(slm_cr = slm_cr,
+                                     alternative = "greater",
+                                     print_results = F)
+
+#### T test For Project Type Specific SLM Subset
+
+types_s <- unique(slm_cr$slm_0500$type)
+subnames <- paste0("type_",gsub("\\s+", "", types_s)) # deleting white spaces
+
+sub_ls <- list()
+
+for (i in types_s) {
+  types <- gsub("\\s+", "", i)
+  sub_ls[[types]] <- lapply(slm_cr, function(x){
+    x %>% filter(type == i)
+  })
+}
+
+
+sub_ttest <- lapply(sub_ls, function(x){
+  T_test_custom_simp(slm_cr = x,
+                     alternative = "greater",
+                     print_results = F)
+})
+
+### Calculate mean and se for SLM_LG and CR_LG
+
+# take mean lg_slm and lg_cr for all
+all_slm_sum <- sapply(slm_cr, function(x){
+  x <- x %>%  summarise(mean_slm_lg = mean(slm_lg),
+                        se_slm_lg = sd(slm_lg) / sqrt(n()),
+                        mean_cr_lg = mean(cr_lg),
+                        se_cr_lg = sd(cr_lg) / sqrt(n()))
+}, simplify = TRUE) %>%
+  t() %>%
+  as.data.frame() %>% 
+  rownames_to_column(var = "buffer") %>% 
+  pivot_longer(- buffer, values_to = "vals", names_to = "vars") 
+
+# bring the pvals in a similar format
+all_p_slm <- all_prj_1sided %>%
+  rownames_to_column(var = "buffer") %>% 
+  inner_join(y = all_slm_sum, by = "buffer") %>% 
+  mutate(type = "all") %>% 
+  select(type, everything(), -mean_x)
+  
+# take mean lg_slm and lg_cr for subsets
+sub_slm_ls_sum <- lapply(sub_ls, function(x){
+  lapply(x, function(y){
+    y <- y %>%  summarise(mean_slm_lg = mean(slm_lg),
+                          se_slm_lg = sd(slm_lg) / sqrt(n()),
+                          mean_cr_lg = mean(cr_lg),
+                          se_cr_lg = sd(cr_lg) / sqrt(n()))
+  })
+})
+
+# unwrap the lists and join them
+sub_slm_sum <- map_dfr(sub_slm_ls_sum,
+                       ~ map_dfr(.x, ~ .x, .id = "buffer"), .id = "type") %>% 
+  pivot_longer(-c(type, buffer), names_to = "vars", values_to = "vals")
+sub_p <- map_dfr(sub_ttest,
+                 ~ .x %>% rownames_to_column("buffer"), .id = "type") %>% 
+  select(-mean_x)
+
+sub_p_slm <- sub_p %>%
+  inner_join(sub_slm_sum, by = c("buffer", "type"))
+
+### Final Plot
+
+fig3_pre1 <- rbind(sub_p_slm, all_p_slm) %>% 
+  mutate(buffer = case_when(vars == "mean_cr_lg" ~ "cr",
+                            vars == "se_cr_lg" ~ "cr",
+                            TRUE ~ buffer))
+
+fig3_pre2 <- fig3_pre1 %>%
+  distinct(type, buffer, vars, vals, .keep_all = T) %>% 
+  pivot_wider(id_cols = c(buffer, type, pvals),
+              names_from = vars,
+              values_from = vals)  %>% 
+  mutate(mean_ = as.numeric(coalesce(mean_slm_lg, mean_cr_lg)),
+         se_ = as.numeric(coalesce(se_slm_lg, se_cr_lg))) %>% 
+  select(mean_, se_, type, buffer, pvals) %>% 
+  mutate(shape = case_when(buffer == "cr" ~ buffer,
+                           TRUE ~ "slm")) %>% 
+  mutate(key = case_when(pvals <= 0.05 & shape == "slm" ~ "s",
+                         pvals > 0.05 & shape == "slm" ~ "r",
+                         shape == "cr" ~ "t"))
+
+# filter out all, revegetation, naturalregeneration
+fig3 <- fig3_pre2 %>%
+  filter(type %in% c("all", "revegetation", "naturalregeneration")) %>% 
+  mutate(type = factor(type,
+                       levels = c("all",
+                                  "revegetation",
+                                  "naturalregeneration")),
+         buffer = factor(buffer, levels = c("slm_5000",
+                                            "slm_4000",
+                                            "slm_3000",
+                                            "slm_2000",
+                                            "slm_1000",
+                                            "slm_0500",
+                                            "cr")))
+ 
+
+ggplot(data = fig3,
+       aes(y = mean_, x = buffer)) + 
+  geom_point(aes(shape = key), 
+             position = position_dodge(width = 0.5), size = 3) +
+  geom_errorbar(aes(ymin = mean_ - se_, ymax = mean_ + se_),
+                position = position_dodge(width = 0.5),
+                width = 0.2) +
+  scale_shape_manual(values = c(16, 8, 17),
+                   labels = c("SLM_LG\nmean", "P <= 0.05", "CR_LG\nmean")) +
+  scale_x_discrete(labels = c("5", "4", "3", "2", "1", "0.5", "cr")) +
+  labs(
+    title = "",
+    x = "Radius around Project Point[km]",
+    y = "Fraction of Greening Pixels around Point",
+    cex = 2,
+    shape = NULL
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = c(0.5, 0.35),
+    legend.justification = c(2, -1),# Position legend at the top
+    legend.direction = "horizontal",  # Arrange items horizontally
+    legend.box = "horizontal",
+    strip.text = element_text(size = 12),
+    legend.background = element_rect(fill = "white", color = "white"), # White box
+    legend.box.margin = margin(0, 0, 0, 0)# Ensure the legend is a single box
+  ) +
+  guides(shape = guide_legend(nrow = 3, ncol = 1)) +  # Set legend layout
+  facet_wrap(~type, ncol = 3, labeller = labeller(type = c(
+  "naturalregeneration" = "Natural Regeneration",
+  "revegetation" = "Revegetation",
+  "all" = "Sustainable Land\nManagement"
+  )))
+
+# ggsave(
+#   filename = "../fig3_kndvievi.pdf",
+#   plot = last_plot(),
+#   width = 5.5,
+#   height = 5,
+#   units = "in"
+# )
+
+df_vi_i <- fig3 %>%select(-shape, -key) %>% mutate(vi = "kNDVI & EVI")
+df_vi_6 <- rbind(df_vi_5, df_vi_i)
+```
+## kNDVI & NIRv
+```{r}
+#| include: false
+#| label: "fig-fig3_kndvinirv"
+#| fig-width: 5.5
+#| fig-height: 5
+#| fig-cap: "Mean and standard error(se) of the share of local greening in all SLM (left) and SLM subsets by project type (mid, right). Mean and se are given for each buffer size around the SLM. Stars show significant differences between SLM_LG and CR_LG from a one sided T test. Projects with a median NDVI > 0.15 were filtered out. Local greening based on NIRv and NDVI data from MOD13Q1.006"
+
+#remove all object from before
+# SLM
+setwd("kndvi_nirv/")
+files <- list.files(pattern = "project", full.names = F)
+x <- sub(".*v12_(\\d{4}).*", "\\1", files)
+var_name_p <- paste0("slm_", x)
+slm_list <- lapply(seq_along(files), function(x){
+  res <- read.csv(files[x])
+  return(res)
+})
+names(slm_list) <- var_name_p #give df names for clarification
+
+index_ndvi_zero <- slm_list$slm_0500$index[slm_list$slm_0500$NDVImask == 0 |
+                                             is.na(slm_list$slm_0500$NDVImask)]
+slm_list <- lapply(slm_list, function(df) {
+  df <- df %>%
+    mutate(mean = round(mean, 10)) %>%
+    filter(NDVImask != 0 & !is.na(NDVImask)) %>%        # filtering out 0 and NA
+    # distinct(mean, definition, .keep_all = TRUE) %>%  # drop duplicates
+    mutate(slm_lg = mean) %>% 
+    select(definition, index, slm_lg, type) %>% 
+    arrange(index)
+
+  return(df)
+})
+
+# combined regions
+cr <- read.csv("mean_AI_country_LU_region_v12.csv") %>% 
+  filter(!index %in% index_ndvi_zero) %>%
+  group_by(index) %>%
+  summarise(cr_lg = mean(mean)) %>%
+  select(cr_lg,index)
+
+slm_cr <- lapply(slm_list, function(x){
+  x <- x %>% inner_join(y = cr, by = "index")
+})
+
+### T test
+#### T test For all SLM
+
+all_prj_1sided <- T_test_custom_simp(slm_cr = slm_cr,
+                                     alternative = "greater",
+                                     print_results = F)
+
+#### T test For Project Type Specific SLM Subset
+
+types_s <- unique(slm_cr$slm_0500$type)
+subnames <- paste0("type_",gsub("\\s+", "", types_s)) # deleting white spaces
+
+sub_ls <- list()
+
+for (i in types_s) {
+  types <- gsub("\\s+", "", i)
+  sub_ls[[types]] <- lapply(slm_cr, function(x){
+    x %>% filter(type == i)
+  })
+}
+
+
+sub_ttest <- lapply(sub_ls, function(x){
+  T_test_custom_simp(slm_cr = x,
+                     alternative = "greater",
+                     print_results = F)
+})
+
+### Calculate mean and se for SLM_LG and CR_LG
+
+# take mean lg_slm and lg_cr for all
+all_slm_sum <- sapply(slm_cr, function(x){
+  x <- x %>%  summarise(mean_slm_lg = mean(slm_lg),
+                        se_slm_lg = sd(slm_lg) / sqrt(n()),
+                        mean_cr_lg = mean(cr_lg),
+                        se_cr_lg = sd(cr_lg) / sqrt(n()))
+}, simplify = TRUE) %>%
+  t() %>%
+  as.data.frame() %>% 
+  rownames_to_column(var = "buffer") %>% 
+  pivot_longer(- buffer, values_to = "vals", names_to = "vars") 
+
+# bring the pvals in a similar format
+all_p_slm <- all_prj_1sided %>%
+  rownames_to_column(var = "buffer") %>% 
+  inner_join(y = all_slm_sum, by = "buffer") %>% 
+  mutate(type = "all") %>% 
+  select(type, everything(), -mean_x)
+  
+# take mean lg_slm and lg_cr for subsets
+sub_slm_ls_sum <- lapply(sub_ls, function(x){
+  lapply(x, function(y){
+    y <- y %>%  summarise(mean_slm_lg = mean(slm_lg),
+                          se_slm_lg = sd(slm_lg) / sqrt(n()),
+                          mean_cr_lg = mean(cr_lg),
+                          se_cr_lg = sd(cr_lg) / sqrt(n()))
+  })
+})
+
+# unwrap the lists and join them
+sub_slm_sum <- map_dfr(sub_slm_ls_sum,
+                       ~ map_dfr(.x, ~ .x, .id = "buffer"), .id = "type") %>% 
+  pivot_longer(-c(type, buffer), names_to = "vars", values_to = "vals")
+sub_p <- map_dfr(sub_ttest,
+                 ~ .x %>% rownames_to_column("buffer"), .id = "type") %>% 
+  select(-mean_x)
+
+sub_p_slm <- sub_p %>%
+  inner_join(sub_slm_sum, by = c("buffer", "type"))
+
+### Final Plot
+
+fig3_pre1 <- rbind(sub_p_slm, all_p_slm) %>% 
+  mutate(buffer = case_when(vars == "mean_cr_lg" ~ "cr",
+                            vars == "se_cr_lg" ~ "cr",
+                            TRUE ~ buffer))
+
+fig3_pre2 <- fig3_pre1 %>%
+  distinct(type, buffer, vars, vals, .keep_all = T) %>% 
+  pivot_wider(id_cols = c(buffer, type, pvals),
+              names_from = vars,
+              values_from = vals)  %>% 
+  mutate(mean_ = as.numeric(coalesce(mean_slm_lg, mean_cr_lg)),
+         se_ = as.numeric(coalesce(se_slm_lg, se_cr_lg))) %>% 
+  select(mean_, se_, type, buffer, pvals) %>% 
+  mutate(shape = case_when(buffer == "cr" ~ buffer,
+                           TRUE ~ "slm")) %>% 
+  mutate(key = case_when(pvals <= 0.05 & shape == "slm" ~ "s",
+                         pvals > 0.05 & shape == "slm" ~ "r",
+                         shape == "cr" ~ "t"))
+
+# filter out all, revegetation, naturalregeneration
+fig3 <- fig3_pre2 %>%
+  filter(type %in% c("all", "revegetation", "naturalregeneration")) %>% 
+  mutate(type = factor(type,
+                       levels = c("all",
+                                  "revegetation",
+                                  "naturalregeneration")),
+         buffer = factor(buffer, levels = c("slm_5000",
+                                            "slm_4000",
+                                            "slm_3000",
+                                            "slm_2000",
+                                            "slm_1000",
+                                            "slm_0500",
+                                            "cr")))
+ 
+
+ggplot(data = fig3,
+       aes(y = mean_, x = buffer)) + 
+  geom_point(aes(shape = key), 
+             position = position_dodge(width = 0.5), size = 3) +
+  geom_errorbar(aes(ymin = mean_ - se_, ymax = mean_ + se_),
+                position = position_dodge(width = 0.5),
+                width = 0.2) +
+  scale_shape_manual(values = c(16, 8, 17),
+                   labels = c("SLM_LG\nmean", "P <= 0.05", "CR_LG\nmean")) +
+  scale_x_discrete(labels = c("5", "4", "3", "2", "1", "0.5", "cr")) +
+  labs(
+    title = "",
+    x = "Radius around Project Point[km]",
+    y = "Fraction of Greening Pixels around Point",
+    cex = 2,
+    shape = NULL
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = c(0.5, 0.35),
+    legend.justification = c(2, -1),# Position legend at the top
+    legend.direction = "horizontal",  # Arrange items horizontally
+    legend.box = "horizontal",
+    strip.text = element_text(size = 12),
+    legend.background = element_rect(fill = "white", color = "white"), # White box
+    legend.box.margin = margin(0, 0, 0, 0)# Ensure the legend is a single box
+  ) +
+  guides(shape = guide_legend(nrow = 3, ncol = 1)) +  # Set legend layout
+  facet_wrap(~type, ncol = 3, labeller = labeller(type = c(
+  "naturalregeneration" = "Natural Regeneration",
+  "revegetation" = "Revegetation",
+  "all" = "Sustainable Land\nManagement"
+  )))
+
+# ggsave(
+#   filename = "../fig3_kndvinirv.pdf",
+#   plot = last_plot(),
+#   width = 5.5,
+#   height = 5,
+#   units = "in"
+# )
+
+df_vi_i <- fig3 %>%select(-shape, -key) %>% mutate(vi = "kNDVI & NIRv")
+df_vi_7 <- rbind(df_vi_6, df_vi_i)
+```
+## NDVI
+```{r}
+#| include: false
+#| label: "fig-fig3_ndvi"
+#| fig-width: 5.5
+#| fig-height: 5
+#| fig-cap: "Mean and standard error(se) of the share of local greening in all SLM (left) and SLM subsets by project type (mid, right). Mean and se are given for each buffer size around the SLM. Stars show significant differences between SLM_LG and CR_LG from a one sided T test. Projects with a median NDVI > 0.15 were filtered out. Local greening based on NIRv and NDVI data from MOD13Q1.006"
+
+#remove all object from before
+# SLM
+setwd("ndvi/")
+files <- list.files(pattern = "project", full.names = F)
+x <- sub(".*v12_(\\d{4}).*", "\\1", files)
+var_name_p <- paste0("slm_", x)
+slm_list <- lapply(seq_along(files), function(x){
+  res <- read.csv(files[x])
+  return(res)
+})
+names(slm_list) <- var_name_p #give df names for clarification
+
+index_ndvi_zero <- slm_list$slm_0500$index[slm_list$slm_0500$NDVImask == 0 |
+                                             is.na(slm_list$slm_0500$NDVImask)]
+slm_list <- lapply(slm_list, function(df) {
+  df <- df %>%
+    mutate(mean = round(mean, 10)) %>%
+    filter(NDVImask != 0 & !is.na(NDVImask)) %>%        # filtering out 0 and NA
+    # distinct(mean, definition, .keep_all = TRUE) %>%  # drop duplicates
+    mutate(slm_lg = mean) %>% 
+    select(definition, index, slm_lg, type) %>% 
+    arrange(index)
+
+  return(df)
+})
+
+# combined regions
+cr <- read.csv("mean_AI_country_LU_region_v12.csv") %>% 
+  filter(!index %in% index_ndvi_zero) %>%
+  group_by(index) %>%
+  summarise(cr_lg = mean(mean)) %>%
+  select(cr_lg,index)
+
+slm_cr <- lapply(slm_list, function(x){
+  x <- x %>% inner_join(y = cr, by = "index")
+})
+
+### T test
+#### T test For all SLM
+
+all_prj_1sided <- T_test_custom_simp(slm_cr = slm_cr,
+                                     alternative = "greater",
+                                     print_results = F)
+
+#### T test For Project Type Specific SLM Subset
+
+types_s <- unique(slm_cr$slm_0500$type)
+subnames <- paste0("type_",gsub("\\s+", "", types_s)) # deleting white spaces
+
+sub_ls <- list()
+
+for (i in types_s) {
+  types <- gsub("\\s+", "", i)
+  sub_ls[[types]] <- lapply(slm_cr, function(x){
+    x %>% filter(type == i)
+  })
+}
+
+
+sub_ttest <- lapply(sub_ls, function(x){
+  T_test_custom_simp(slm_cr = x,
+                     alternative = "greater",
+                     print_results = F)
+})
+
+### Calculate mean and se for SLM_LG and CR_LG
+
+# take mean lg_slm and lg_cr for all
+all_slm_sum <- sapply(slm_cr, function(x){
+  x <- x %>%  summarise(mean_slm_lg = mean(slm_lg),
+                        se_slm_lg = sd(slm_lg) / sqrt(n()),
+                        mean_cr_lg = mean(cr_lg),
+                        se_cr_lg = sd(cr_lg) / sqrt(n()))
+}, simplify = TRUE) %>%
+  t() %>%
+  as.data.frame() %>% 
+  rownames_to_column(var = "buffer") %>% 
+  pivot_longer(- buffer, values_to = "vals", names_to = "vars") 
+
+# bring the pvals in a similar format
+all_p_slm <- all_prj_1sided %>%
+  rownames_to_column(var = "buffer") %>% 
+  inner_join(y = all_slm_sum, by = "buffer") %>% 
+  mutate(type = "all") %>% 
+  select(type, everything(), -mean_x)
+  
+# take mean lg_slm and lg_cr for subsets
+sub_slm_ls_sum <- lapply(sub_ls, function(x){
+  lapply(x, function(y){
+    y <- y %>%  summarise(mean_slm_lg = mean(slm_lg),
+                          se_slm_lg = sd(slm_lg) / sqrt(n()),
+                          mean_cr_lg = mean(cr_lg),
+                          se_cr_lg = sd(cr_lg) / sqrt(n()))
+  })
+})
+
+# unwrap the lists and join them
+sub_slm_sum <- map_dfr(sub_slm_ls_sum,
+                       ~ map_dfr(.x, ~ .x, .id = "buffer"), .id = "type") %>% 
+  pivot_longer(-c(type, buffer), names_to = "vars", values_to = "vals")
+sub_p <- map_dfr(sub_ttest,
+                 ~ .x %>% rownames_to_column("buffer"), .id = "type") %>% 
+  select(-mean_x)
+
+sub_p_slm <- sub_p %>%
+  inner_join(sub_slm_sum, by = c("buffer", "type"))
+
+### Final Plot
+
+fig3_pre1 <- rbind(sub_p_slm, all_p_slm) %>% 
+  mutate(buffer = case_when(vars == "mean_cr_lg" ~ "cr",
+                            vars == "se_cr_lg" ~ "cr",
+                            TRUE ~ buffer))
+
+fig3_pre2 <- fig3_pre1 %>%
+  distinct(type, buffer, vars, vals, .keep_all = T) %>% 
+  pivot_wider(id_cols = c(buffer, type, pvals),
+              names_from = vars,
+              values_from = vals)  %>% 
+  mutate(mean_ = as.numeric(coalesce(mean_slm_lg, mean_cr_lg)),
+         se_ = as.numeric(coalesce(se_slm_lg, se_cr_lg))) %>% 
+  select(mean_, se_, type, buffer, pvals) %>% 
+  mutate(shape = case_when(buffer == "cr" ~ buffer,
+                           TRUE ~ "slm")) %>% 
+  mutate(key = case_when(pvals <= 0.05 & shape == "slm" ~ "s",
+                         pvals > 0.05 & shape == "slm" ~ "r",
+                         shape == "cr" ~ "t"))
+
+# filter out all, revegetation, naturalregeneration
+fig3 <- fig3_pre2 %>%
+  filter(type %in% c("all", "revegetation", "naturalregeneration")) %>% 
+  mutate(type = factor(type,
+                       levels = c("all",
+                                  "revegetation",
+                                  "naturalregeneration")),
+         buffer = factor(buffer, levels = c("slm_5000",
+                                            "slm_4000",
+                                            "slm_3000",
+                                            "slm_2000",
+                                            "slm_1000",
+                                            "slm_0500",
+                                            "cr")))
+ 
+
+ggplot(data = fig3,
+       aes(y = mean_, x = buffer)) + 
+  geom_point(aes(shape = key), 
+             position = position_dodge(width = 0.5), size = 3) +
+  geom_errorbar(aes(ymin = mean_ - se_, ymax = mean_ + se_),
+                position = position_dodge(width = 0.5),
+                width = 0.2) +
+  scale_shape_manual(values = c(16, 8, 17),
+                   labels = c("SLM_LG\nmean", "P <= 0.05", "CR_LG\nmean")) +
+  scale_x_discrete(labels = c("5", "4", "3", "2", "1", "0.5", "cr")) +
+  labs(
+    title = "",
+    x = "Radius around Project Point[km]",
+    y = "Fraction of Greening Pixels around Point",
+    cex = 2,
+    shape = NULL
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = c(0.5, 0.35),
+    legend.justification = c(2, -1),# Position legend at the top
+    legend.direction = "horizontal",  # Arrange items horizontally
+    legend.box = "horizontal",
+    strip.text = element_text(size = 12),
+    legend.background = element_rect(fill = "white", color = "white"), # White box
+    legend.box.margin = margin(0, 0, 0, 0)# Ensure the legend is a single box
+  ) +
+  guides(shape = guide_legend(nrow = 3, ncol = 1)) +  # Set legend layout
+  facet_wrap(~type, ncol = 3, labeller = labeller(type = c(
+  "naturalregeneration" = "Natural Regeneration",
+  "revegetation" = "Revegetation",
+  "all" = "Sustainable Land\nManagement"
+  )))
+
+# ggsave(
+#   filename = "../fig3_ndvi.pdf",
+#   plot = last_plot(),
+#   width = 5.5,
+#   height = 5,
+#   units = "in"
+# )
+
+df_vi_i <- fig3 %>%select(-shape, -key) %>% mutate(vi = "NDVI")
+df_vi_8 <- rbind(df_vi_7, df_vi_i)
+```
+## EVI
+```{r}
+#| include: false
+#| label: "fig-fig3_evi"
+#| fig-width: 5.5
+#| fig-height: 5
+#| fig-cap: "Mean and standard error(se) of the share of local greening in all SLM (left) and SLM subsets by project type (mid, right). Mean and se are given for each buffer size around the SLM. Stars show significant differences between SLM_LG and CR_LG from a one sided T test. Projects with a median NDVI > 0.15 were filtered out. Local greening based on NIRv and NDVI data from MOD13Q1.006"
+
+#remove all object from before
+# SLM
+setwd("evi/")
+files <- list.files(pattern = "project", full.names = F)
+x <- sub(".*v12_(\\d{4}).*", "\\1", files)
+var_name_p <- paste0("slm_", x)
+slm_list <- lapply(seq_along(files), function(x){
+  res <- read.csv(files[x])
+  return(res)
+})
+names(slm_list) <- var_name_p #give df names for clarification
+
+index_ndvi_zero <- slm_list$slm_0500$index[slm_list$slm_0500$NDVImask == 0 |
+                                             is.na(slm_list$slm_0500$NDVImask)]
+slm_list <- lapply(slm_list, function(df) {
+  df <- df %>%
+    mutate(mean = round(mean, 10)) %>%
+    filter(NDVImask != 0 & !is.na(NDVImask)) %>%        # filtering out 0 and NA
+    # distinct(mean, definition, .keep_all = TRUE) %>%  # drop duplicates
+    mutate(slm_lg = mean) %>% 
+    select(definition, index, slm_lg, type) %>% 
+    arrange(index)
+
+  return(df)
+})
+
+# combined regions
+cr <- read.csv("mean_AI_country_LU_region_v12.csv") %>% 
+  filter(!index %in% index_ndvi_zero) %>%
+  group_by(index) %>%
+  summarise(cr_lg = mean(mean)) %>%
+  select(cr_lg,index)
+
+slm_cr <- lapply(slm_list, function(x){
+  x <- x %>% inner_join(y = cr, by = "index")
+})
+
+### T test
+#### T test For all SLM
+
+all_prj_1sided <- T_test_custom_simp(slm_cr = slm_cr,
+                                     alternative = "greater",
+                                     print_results = F)
+
+#### T test For Project Type Specific SLM Subset
+
+types_s <- unique(slm_cr$slm_0500$type)
+subnames <- paste0("type_",gsub("\\s+", "", types_s)) # deleting white spaces
+
+sub_ls <- list()
+
+for (i in types_s) {
+  types <- gsub("\\s+", "", i)
+  sub_ls[[types]] <- lapply(slm_cr, function(x){
+    x %>% filter(type == i)
+  })
+}
+
+
+sub_ttest <- lapply(sub_ls, function(x){
+  T_test_custom_simp(slm_cr = x,
+                     alternative = "greater",
+                     print_results = F)
+})
+
+### Calculate mean and se for SLM_LG and CR_LG
+
+# take mean lg_slm and lg_cr for all
+all_slm_sum <- sapply(slm_cr, function(x){
+  x <- x %>%  summarise(mean_slm_lg = mean(slm_lg),
+                        se_slm_lg = sd(slm_lg) / sqrt(n()),
+                        mean_cr_lg = mean(cr_lg),
+                        se_cr_lg = sd(cr_lg) / sqrt(n()))
+}, simplify = TRUE) %>%
+  t() %>%
+  as.data.frame() %>% 
+  rownames_to_column(var = "buffer") %>% 
+  pivot_longer(- buffer, values_to = "vals", names_to = "vars") 
+
+# bring the pvals in a similar format
+all_p_slm <- all_prj_1sided %>%
+  rownames_to_column(var = "buffer") %>% 
+  inner_join(y = all_slm_sum, by = "buffer") %>% 
+  mutate(type = "all") %>% 
+  select(type, everything(), -mean_x)
+  
+# take mean lg_slm and lg_cr for subsets
+sub_slm_ls_sum <- lapply(sub_ls, function(x){
+  lapply(x, function(y){
+    y <- y %>%  summarise(mean_slm_lg = mean(slm_lg),
+                          se_slm_lg = sd(slm_lg) / sqrt(n()),
+                          mean_cr_lg = mean(cr_lg),
+                          se_cr_lg = sd(cr_lg) / sqrt(n()))
+  })
+})
+
+# unwrap the lists and join them
+sub_slm_sum <- map_dfr(sub_slm_ls_sum,
+                       ~ map_dfr(.x, ~ .x, .id = "buffer"), .id = "type") %>% 
+  pivot_longer(-c(type, buffer), names_to = "vars", values_to = "vals")
+sub_p <- map_dfr(sub_ttest,
+                 ~ .x %>% rownames_to_column("buffer"), .id = "type") %>% 
+  select(-mean_x)
+
+sub_p_slm <- sub_p %>%
+  inner_join(sub_slm_sum, by = c("buffer", "type"))
+
+### Final Plot
+
+fig3_pre1 <- rbind(sub_p_slm, all_p_slm) %>% 
+  mutate(buffer = case_when(vars == "mean_cr_lg" ~ "cr",
+                            vars == "se_cr_lg" ~ "cr",
+                            TRUE ~ buffer))
+
+fig3_pre2 <- fig3_pre1 %>%
+  distinct(type, buffer, vars, vals, .keep_all = T) %>% 
+  pivot_wider(id_cols = c(buffer, type, pvals),
+              names_from = vars,
+              values_from = vals)  %>% 
+  mutate(mean_ = as.numeric(coalesce(mean_slm_lg, mean_cr_lg)),
+         se_ = as.numeric(coalesce(se_slm_lg, se_cr_lg))) %>% 
+  select(mean_, se_, type, buffer, pvals) %>% 
+  mutate(shape = case_when(buffer == "cr" ~ buffer,
+                           TRUE ~ "slm")) %>% 
+  mutate(key = case_when(pvals <= 0.05 & shape == "slm" ~ "s",
+                         pvals > 0.05 & shape == "slm" ~ "r",
+                         shape == "cr" ~ "t"))
+
+# filter out all, revegetation, naturalregeneration
+fig3 <- fig3_pre2 %>%
+  filter(type %in% c("all", "revegetation", "naturalregeneration")) %>% 
+  mutate(type = factor(type,
+                       levels = c("all",
+                                  "revegetation",
+                                  "naturalregeneration")),
+         buffer = factor(buffer, levels = c("slm_5000",
+                                            "slm_4000",
+                                            "slm_3000",
+                                            "slm_2000",
+                                            "slm_1000",
+                                            "slm_0500",
+                                            "cr")))
+ 
+
+ggplot(data = fig3,
+       aes(y = mean_, x = buffer)) + 
+  geom_point(aes(shape = key), 
+             position = position_dodge(width = 0.5), size = 3) +
+  geom_errorbar(aes(ymin = mean_ - se_, ymax = mean_ + se_),
+                position = position_dodge(width = 0.5),
+                width = 0.2) +
+  scale_shape_manual(values = c(16, 8, 17),
+                   labels = c("SLM_LG\nmean", "P <= 0.05", "CR_LG\nmean")) +
+  scale_x_discrete(labels = c("5", "4", "3", "2", "1", "0.5", "cr")) +
+  labs(
+    title = "",
+    x = "Radius around Project Point[km]",
+    y = "Fraction of Greening Pixels around Point",
+    cex = 2,
+    shape = NULL
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = c(0.5, 0.35),
+    legend.justification = c(2, -1),# Position legend at the top
+    legend.direction = "horizontal",  # Arrange items horizontally
+    legend.box = "horizontal",
+    strip.text = element_text(size = 12),
+    legend.background = element_rect(fill = "white", color = "white"), # White box
+    legend.box.margin = margin(0, 0, 0, 0)# Ensure the legend is a single box
+  ) +
+  guides(shape = guide_legend(nrow = 3, ncol = 1)) +  # Set legend layout
+  facet_wrap(~type, ncol = 3, labeller = labeller(type = c(
+  "naturalregeneration" = "Natural Regeneration",
+  "revegetation" = "Revegetation",
+  "all" = "Sustainable Land\nManagement"
+  )))
+
+# ggsave(
+#   filename = "../fig3_evi.pdf",
+#   plot = last_plot(),
+#   width = 5.5,
+#   height = 5,
+#   units = "in"
+# )
+
+df_vi_i <- fig3 %>%select(-shape, -key) %>% mutate(vi = "EVI")
+df_vi_9 <- rbind(df_vi_8, df_vi_i)
+```
+## EVI & NDVI
+```{r}
+#| include: false
+#| label: "fig-fig3_evindvi"
+#| fig-width: 5.5
+#| fig-height: 5
+#| fig-cap: "Mean and standard error(se) of the share of local greening in all SLM (left) and SLM subsets by project type (mid, right). Mean and se are given for each buffer size around the SLM. Stars show significant differences between SLM_LG and CR_LG from a one sided T test. Projects with a median NDVI > 0.15 were filtered out. Local greening based on NIRv and NDVI data from MOD13Q1.006"
+
+#remove all object from before
+# SLM
+setwd("evi_ndvi_nomask//")
+files <- list.files(pattern = "project", full.names = F)
+x <- sub(".*v12_(\\d{4}).*", "\\1", files)
+var_name_p <- paste0("slm_", x)
+slm_list <- lapply(seq_along(files), function(x){
+  res <- read.csv(files[x])
+  return(res)
+})
+names(slm_list) <- var_name_p #give df names for clarification
+
+index_ndvi_zero <- slm_list$slm_0500$index[slm_list$slm_0500$NDVImask == 0 |
+                                             is.na(slm_list$slm_0500$NDVImask)]
+slm_list <- lapply(slm_list, function(df) {
+  df <- df %>%
+    mutate(mean = round(mean, 10)) %>%
+    filter(NDVImask != 0 & !is.na(NDVImask)) %>%        # filtering out 0 and NA
+    # distinct(mean, definition, .keep_all = TRUE) %>%  # drop duplicates
+    mutate(slm_lg = mean) %>% 
+    select(definition, index, slm_lg, type) %>% 
+    arrange(index)
+
+  return(df)
+})
+
+# combined regions
+cr <- read.csv("mean_AI_country_LU_region_v12.csv") %>% 
+  filter(!index %in% index_ndvi_zero) %>%
+  group_by(index) %>%
+  summarise(cr_lg = mean(mean)) %>%
+  select(cr_lg,index)
+
+slm_cr <- lapply(slm_list, function(x){
+  x <- x %>% inner_join(y = cr, by = "index")
+})
+
+### T test
+#### T test For all SLM
+
+all_prj_1sided <- T_test_custom_simp(slm_cr = slm_cr,
+                                     alternative = "greater",
+                                     print_results = F)
+
+#### T test For Project Type Specific SLM Subset
+
+types_s <- unique(slm_cr$slm_0500$type)
+subnames <- paste0("type_",gsub("\\s+", "", types_s)) # deleting white spaces
+
+sub_ls <- list()
+
+for (i in types_s) {
+  types <- gsub("\\s+", "", i)
+  sub_ls[[types]] <- lapply(slm_cr, function(x){
+    x %>% filter(type == i)
+  })
+}
+
+
+sub_ttest <- lapply(sub_ls, function(x){
+  T_test_custom_simp(slm_cr = x,
+                     alternative = "greater",
+                     print_results = F)
+})
+
+### Calculate mean and se for SLM_LG and CR_LG
+
+# take mean lg_slm and lg_cr for all
+all_slm_sum <- sapply(slm_cr, function(x){
+  x <- x %>%  summarise(mean_slm_lg = mean(slm_lg),
+                        se_slm_lg = sd(slm_lg) / sqrt(n()),
+                        mean_cr_lg = mean(cr_lg),
+                        se_cr_lg = sd(cr_lg) / sqrt(n()))
+}, simplify = TRUE) %>%
+  t() %>%
+  as.data.frame() %>% 
+  rownames_to_column(var = "buffer") %>% 
+  pivot_longer(- buffer, values_to = "vals", names_to = "vars") 
+
+# bring the pvals in a similar format
+all_p_slm <- all_prj_1sided %>%
+  rownames_to_column(var = "buffer") %>% 
+  inner_join(y = all_slm_sum, by = "buffer") %>% 
+  mutate(type = "all") %>% 
+  select(type, everything(), -mean_x)
+  
+# take mean lg_slm and lg_cr for subsets
+sub_slm_ls_sum <- lapply(sub_ls, function(x){
+  lapply(x, function(y){
+    y <- y %>%  summarise(mean_slm_lg = mean(slm_lg),
+                          se_slm_lg = sd(slm_lg) / sqrt(n()),
+                          mean_cr_lg = mean(cr_lg),
+                          se_cr_lg = sd(cr_lg) / sqrt(n()))
+  })
+})
+
+# unwrap the lists and join them
+sub_slm_sum <- map_dfr(sub_slm_ls_sum,
+                       ~ map_dfr(.x, ~ .x, .id = "buffer"), .id = "type") %>% 
+  pivot_longer(-c(type, buffer), names_to = "vars", values_to = "vals")
+sub_p <- map_dfr(sub_ttest,
+                 ~ .x %>% rownames_to_column("buffer"), .id = "type") %>% 
+  select(-mean_x)
+
+sub_p_slm <- sub_p %>%
+  inner_join(sub_slm_sum, by = c("buffer", "type"))
+
+### Final Plot
+
+fig3_pre1 <- rbind(sub_p_slm, all_p_slm) %>% 
+  mutate(buffer = case_when(vars == "mean_cr_lg" ~ "cr",
+                            vars == "se_cr_lg" ~ "cr",
+                            TRUE ~ buffer))
+
+fig3_pre2 <- fig3_pre1 %>%
+  distinct(type, buffer, vars, vals, .keep_all = T) %>% 
+  pivot_wider(id_cols = c(buffer, type, pvals),
+              names_from = vars,
+              values_from = vals)  %>% 
+  mutate(mean_ = as.numeric(coalesce(mean_slm_lg, mean_cr_lg)),
+         se_ = as.numeric(coalesce(se_slm_lg, se_cr_lg))) %>% 
+  select(mean_, se_, type, buffer, pvals) %>% 
+  mutate(shape = case_when(buffer == "cr" ~ buffer,
+                           TRUE ~ "slm")) %>% 
+  mutate(key = case_when(pvals <= 0.05 & shape == "slm" ~ "s",
+                         pvals > 0.05 & shape == "slm" ~ "r",
+                         shape == "cr" ~ "t"))
+
+# filter out all, revegetation, naturalregeneration
+fig3 <- fig3_pre2 %>%
+  filter(type %in% c("all", "revegetation", "naturalregeneration")) %>% 
+  mutate(type = factor(type,
+                       levels = c("all",
+                                  "revegetation",
+                                  "naturalregeneration")),
+         buffer = factor(buffer, levels = c("slm_5000",
+                                            "slm_4000",
+                                            "slm_3000",
+                                            "slm_2000",
+                                            "slm_1000",
+                                            "slm_0500",
+                                            "cr")))
+ 
+
+ggplot(data = fig3,
+       aes(y = mean_, x = buffer)) + 
+  geom_point(aes(shape = key), 
+             position = position_dodge(width = 0.5), size = 3) +
+  geom_errorbar(aes(ymin = mean_ - se_, ymax = mean_ + se_),
+                position = position_dodge(width = 0.5),
+                width = 0.2) +
+  scale_shape_manual(values = c(16, 8, 17),
+                   labels = c("SLM_LG\nmean", "P <= 0.05", "CR_LG\nmean")) +
+  scale_x_discrete(labels = c("5", "4", "3", "2", "1", "0.5", "cr")) +
+  labs(
+    title = "",
+    x = "Radius around Project Point[km]",
+    y = "Fraction of Greening Pixels around Point",
+    cex = 2,
+    shape = NULL
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = c(0.5, 0.35),
+    legend.justification = c(2, -1),# Position legend at the top
+    legend.direction = "horizontal",  # Arrange items horizontally
+    legend.box = "horizontal",
+    strip.text = element_text(size = 12),
+    legend.background = element_rect(fill = "white", color = "white"), # White box
+    legend.box.margin = margin(0, 0, 0, 0)# Ensure the legend is a single box
+  ) +
+  guides(shape = guide_legend(nrow = 3, ncol = 1)) +  # Set legend layout
+  facet_wrap(~type, ncol = 3, labeller = labeller(type = c(
+  "naturalregeneration" = "Natural Regeneration",
+  "revegetation" = "Revegetation",
+  "all" = "Sustainable Land\nManagement"
+  )))
+
+# ggsave(
+#   filename = "../fig3_evindvi.pdf",
+#   plot = last_plot(),
+#   width = 5.5,
+#   height = 5,
+#   units = "in"
+# )
+```
+
+
+```{r}
+#| include: false
+df_vi_i <- fig3 %>%select(-shape, -key) %>% mutate(vi = "EVI & NDVI")
+df_vi_10 <- rbind(df_vi_9, df_vi_i) %>% arrange(type, buffer)
+# write.csv(df_vi_10, "table_vi_results")
+
+```
+Alternatively load in df
+```{r}
+df_vi_10 <- read.csv("df_vi_10.csv")
+```
+
+
+```{r}
+dfgg <- df_vi_10 %>% filter(buffer != "cr")
+vi_sorted <- c(
+  "EVI & NDVI", "NDVI", "EVI", "NIRv", "kNDVI", "NIRv & NDVI", "NIRv & EVI", 
+  "kNDVI & NDVI", "kNDVI & EVI", "kNDVI & NIRv"
+)
+shape_mapping <- c(6,17,17,17,17, 16,16, 3, 3, 3)
+color_mapping <- c("grey", "grey", "grey", "grey", "black", "grey", "grey", "black", "black", "black" )
+dfgg$vi <- factor(dfgg$vi, levels = vi_sorted)
+
+facet_order <- c("all", "revegetation", "naturalregeneration")
+dfgg$type <- factor(dfgg$type, levels = facet_order)
+buffer_order <- c("slm_5000",
+                  "slm_4000",
+                  "slm_3000",
+                  "slm_2000",
+                  "slm_1000",
+                  "slm_0500")
+# Update the factor levels for `buffer`
+dfgg$buffer <- factor(dfgg$buffer, levels = buffer_order)
+
+# Create the plot
+ggplot(dfgg, aes(x = buffer, y = pvals, color = vi)) +
+  geom_point(
+    aes(shape = vi),
+    size = 2,               
+    position = position_jitter(width = 0.2, height = 0)  
+  ) +
+  geom_hline(yintercept = 0.05, linetype = "dashed", color = "black", size = 0.8) +  # Add horizontal line
+  theme_bw() +
+  # Add x-ticks and x-axis label
+  scale_x_discrete(
+    labels = rep(c(5,4,3,2,1,0.5), length.out = length(unique(dfgg$buffer)))
+  ) +
+  # Customize theme
+  theme(
+    axis.text.x = element_text(angle = 0, hjust = 0.5),
+    panel.grid.major.x = element_blank(),
+    legend.position = "right",
+    legend.title = element_text(face = "bold"),
+    legend.text = element_text(size = 8),
+    strip.text = element_text(face = "bold")
+  ) +
+  # Add labels
+  labs(
+    x = "Radius around Project Point [km]",  
+    y = "P Value",
+
+    color = "Vegetation Indices",
+    shape = "Vegetation Indices",
+    title = ""
+  ) +
+  # Update facet labels for the headings
+  facet_grid(~type, scales = "free_x", space = "free_x", labeller = as_labeller(
+    c(
+      "all" = "Sustainable\nLand Management", 
+      "revegetation" = "Revegetation", 
+      "naturalregeneration" = "Natural Regeneration"
+    )
+  )) +
+  # Apply custom color and shape scales
+  scale_color_manual(values = color_mapping) +
+  scale_shape_manual(values = shape_mapping)
+
+# ggsave(
+#   filename = "vi_pvals.pdf",
+#   plot = myplot,
+#   width = 7,
+#   height = 5,
+#   units = "in"
+# )
+```
+```{r}
+dfgg <- df_vi_10 %>% filter(buffer != "cr")
+vi_sorted <- c(
+  "EVI & NDVI", "NDVI", "EVI", "NIRv", "kNDVI", "NIRv & NDVI", "NIRv & EVI", 
+  "kNDVI & NDVI", "kNDVI & EVI", "kNDVI & NIRv"
+)
+
+dfgg$vi <- factor(dfgg$vi, levels = vi_sorted)
+
+facet_order <- c("all", "revegetation", "naturalregeneration")
+dfgg$type <- factor(dfgg$type, levels = facet_order)
+buffer_order <- c("slm_5000",
+                  "slm_4000",
+                  "slm_3000",
+                  "slm_2000",
+                  "slm_1000",
+                  "slm_0500")
+# Update the factor levels for `buffer`
+dfgg$buffer <- factor(dfgg$buffer, levels = buffer_order)
+
+# Create the plot
+ggplot(dfgg, aes(x = buffer, y = pvals)) +
+  geom_point(
+    size = 2,               
+    position = position_jitter(width = 0.2, height = 0)  
+  ) +
+  geom_hline(yintercept = 0.05, linetype = "dashed", color = "black", size = 0.8) +  # Add horizontal line
+  theme_bw() +
+  # Add x-ticks and x-axis label
+  scale_x_discrete(
+    labels = rep(c(5,4,3,2,1,0.5), length.out = length(unique(dfgg$buffer)))
+  ) +
+  # Customize theme
+  theme(
+    axis.text.x = element_text(angle = 0, hjust = 0.5),
+    panel.grid.major.x = element_blank(),
+    legend.position = "right",
+    legend.title = element_text(face = "bold"),
+    legend.text = element_text(size = 8),
+    strip.text = element_text(face = "bold")
+  ) +
+  # Add labels
+  labs(
+    x = "Radius around Project Point [km]",  
+    y = "P Value",
+
+    color = "Vegetation Indices",
+    shape = "Vegetation Indices",
+    title = ""
+  ) +
+  # Update facet labels for the headings
+  facet_grid(~type, scales = "free_x", space = "free_x", labeller = as_labeller(
+    c(
+      "all" = "Sustainable\nLand Management", 
+      "revegetation" = "Revegetation", 
+      "naturalregeneration" = "Natural Regeneration"
+    )
+  ))
+
+
+ggsave(
+ filename = "fig/vi_pvals.pdf",
+ plot = last_plot(),
+ width = 7,
+ height = 5,
+ units = "in"
+)
+```
+
+```{r}
+# Define the desired order of x-axis values for `buffer`
+facet_order <- c("all", "revegetation", "naturalregeneration")
+dfgg$type <- factor(dfgg$type, levels = facet_order)
+buffer_order <- c("slm_5000",
+                  "slm_4000",
+                  "slm_3000",
+                  "slm_2000",
+                  "slm_1000",
+                  "slm_0500")
+# Update the factor levels for `buffer`
+dfgg$buffer <- factor(dfgg$buffer, levels = buffer_order)
+
+# Plot code remains the same
+ggplot(dfgg, aes(x = buffer, y = mean_, color = vi)) +
+  geom_point(
+    aes(shape = vi),
+    size = 2,               
+    position = position_jitter(width = 0.2, height = 0)  
+  ) +
+  theme_bw() +
+  scale_x_discrete(
+    labels = rep(c(5,4,3,2,1,0.5), length.out = length(unique(dfgg$buffer)))
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 0, hjust = 0.5),
+    panel.grid.major.x = element_blank(),
+    legend.position = "right",
+    legend.title = element_text(face = "bold"),
+    legend.text = element_text(size = 8),
+    strip.text = element_text(face = "bold")
+  ) +
+  labs(
+    x = "Radius around Project Point [km]",
+    y = "Mean Fraction of Greening Pixel around Point [%]",
+    color = "Vegetation Indices",
+    shape = "Vegetation Indices",
+    title = ""
+  ) +
+  facet_grid(~type, scales = "free_x", space = "free_x", labeller = as_labeller(
+    c(
+      "all" = "Sustainable\nLand Management", 
+      "revegetation" = "Revegetation", 
+      "naturalregeneration" = "Natural Regeneration"
+    )
+  )) +
+  scale_color_manual(values = color_mapping) +
+  scale_shape_manual(values = shape_mapping)
+
+
+
+# ggsave(
+#   filename = "vi_mean_lg.pdf",
+#   plot = last_plot(),
+#   width = 7,
+#   height = 5,
+#   units = "in"
+# )
+
+```
+```{r}
+# Define the desired order of x-axis values for `buffer`
+facet_order <- c("all", "revegetation", "naturalregeneration")
+dfgg$type <- factor(dfgg$type, levels = facet_order)
+buffer_order <- c("slm_5000",
+                  "slm_4000",
+                  "slm_3000",
+                  "slm_2000",
+                  "slm_1000",
+                  "slm_0500")
+# Update the factor levels for `buffer`
+dfgg$buffer <- factor(dfgg$buffer, levels = buffer_order)
+
+# Plot code remains the same
+ggplot(dfgg, aes(x = buffer, y = mean_)) +
+  geom_point(
+    size = 2,               
+    position = position_jitter(width = 0.2, height = 0)  
+  ) +
+  theme_bw() +
+  scale_x_discrete(
+    labels = rep(c(5,4,3,2,1,0.5), length.out = length(unique(dfgg$buffer)))
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 0, hjust = 0.5),
+    panel.grid.major.x = element_blank(),
+    legend.position = "right",
+    legend.title = element_text(face = "bold"),
+    legend.text = element_text(size = 8),
+    strip.text = element_text(face = "bold")
+  ) +
+  labs(
+    x = "Radius around Project Point [km]",
+    y = "Mean Fraction of Greening Pixel around Point [%]",
+    color = "Vegetation Indices",
+    shape = "Vegetation Indices",
+    title = ""
+  ) +
+  facet_grid(~type, scales = "free_x", space = "free_x", labeller = as_labeller(
+    c(
+      "all" = "Sustainable\nLand Management", 
+      "revegetation" = "Revegetation", 
+      "naturalregeneration" = "Natural Regeneration"
+    )
+  ))
+
+
+
+ggsave(
+ filename = "fig/vi_mean_lg.pdf",
+ plot = last_plot(),
+ width = 7,
+ height = 5,
+ units = "in"
+)
+
+```
+
+```{r}
+dfgg <- df_vi_10 %>%
+  filter(
+    (type == "all" & buffer == "slm_2000") |
+    (type == "revegetation" & buffer == "slm_0500") |
+    (type == "naturalregeneration" & buffer == "slm_5000") |
+    buffer == "cr"
+  ) %>%
+  mutate(key = case_when(buffer != "cr" ~ "a",
+                         buffer == "cr" ~ "cr"))
+
+vi_sorted <- c(
+  "EVI & NDVI", "NDVI", "EVI", "NIRv", "kNDVI", "NIRv & NDVI", "NIRv & EVI", 
+  "kNDVI & NDVI", "kNDVI & EVI", "kNDVI & NIRv"
+)
+dfgg$vi <- factor(dfgg$vi, levels = vi_sorted)
+
+
+ggplot(data = dfgg,
+       aes(y = mean_, x = vi)) + 
+  geom_point(aes(shape = key), size = 3) +
+  geom_errorbar(aes(ymin = mean_ - se_, ymax = mean_ + se_),
+                width = 0.2) +
+  scale_shape_manual(values = c(16, 2),
+                   labels = c("SLM_LG\nmean", "CR_LG\nmean")) +
+  #scale_x_discrete(labels = c("5", "4", "3", "2", "1", "0.5", "cr")) +
+  labs(
+    title = "",
+    x = "Vegetation Indices",
+    y = "Fraction of Greening Pixels around Point",
+    cex = 2,
+    shape = NULL
+  ) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+    legend.position = c(0.5, 0.35),
+    legend.justification = c(2.5, -.5),# Position legend at the top
+    legend.direction = "horizontal",  # Arrange items horizontally
+    legend.box = "horizontal",
+    strip.text = element_text(size = 12),
+    legend.background = element_rect(fill = "white", color = "white"), # White box
+    legend.box.margin = margin(0, 0, 0, 0)# Ensure the legend is a single box
+  ) +
+  guides(shape = guide_legend(nrow = 3, ncol = 1)) +  # Set legend layout
+  facet_wrap(~type, ncol = 3, labeller = labeller(type = c(
+  "naturalregeneration" = "Natural Regeneration",
+  "revegetation" = "Revegetation",
+  "all" = "Sustainable Land\nManagement"
+  )))
+
+ggsave(
+ filename = "fig/vi_mean_lg_less.pdf",
+ plot = last_plot(),
+ width = 7,
+ height = 5,
+ units = "in"
+)
+```
+
+```{r}
+dfgg <- df_vi_10 %>%
+  filter(
+    (type == "all" & buffer == "slm_2000") |
+    (type == "revegetation" & buffer == "slm_0500") |
+    (type == "naturalregeneration" & buffer == "slm_5000")
+  )
+dfgg$vi <- factor(dfgg$vi, levels = vi_sorted)
+
+ggplot(data = dfgg,
+       aes(y = pvals, x = vi)) + 
+  #geom_col(width=0.2) +
+  geom_point(pch = 4) +
+  geom_hline(yintercept=0.05, linetype="dashed", color = "red", linewidth = 1) +
+  scale_shape_manual(values = c(16, 8, 17),
+                   labels = c("SLM_LG\nmean", "P <= 0.05", "CR_LG\nmean")) +
+  #scale_x_discrete(labels = c("5", "4", "3", "2", "1", "0.5", "cr")) +
+  labs(
+    title = "",
+    x = "Vegetation Indices",
+    y = "p value",
+    cex = 2,
+    shape = NULL
+  ) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+    legend.position = c(0.5, 0.35),
+    legend.justification = c(2, -1),# Position legend at the top
+    legend.direction = "horizontal",  # Arrange items horizontally
+    legend.box = "horizontal",
+    strip.text = element_text(size = 12),
+    legend.background = element_rect(fill = "white", color = "white"), # White box
+    legend.box.margin = margin(0, 0, 0, 0)# Ensure the legend is a single box
+  ) +
+  guides(shape = guide_legend(nrow = 3, ncol = 1)) +  # Set legend layout
+  facet_wrap(~type, ncol = 3, labeller = labeller(type = c(
+  "naturalregeneration" = "Natural Regeneration",
+  "revegetation" = "Revegetation",
+  "all" = "Sustainable Land\nManagement"
+  )))
+
+ggsave(
+ filename = "fig/vi_pval_lg.pdf",
+ plot = last_plot(),
+ width = 7,
+ height = 5,
+ units = "in"
+)
+```
+
+# IV) MOD13Q1.061 Instead of MOD13Q1.006
+The study uses the satellite product *MOD13Q1.006* (2001-01-01 to 2022-01-01)
+to access vegetation indices. Here, we redo the 
+BFAST (in GGE: ee.Algorithms.TemporalSegmentation.StructuralChangeBreakpoints)
+analysis with the updated product 
+*MOD13Q1.006* allowing us to use newer data (2001-01-01 to 2024-01-01).
+
+@fig-bp shows the development of the detected breakpoints over the years. Noticeably, 
+in the last year, from 2017 to 2018 the number of breakpoints almost doubles.
+To us, it seems unlikely that this is caused solely by a local greening trend,
+as the authors suggest (See Ruijsch et al 2023: Chapter 3.1).
+
+By re-running the BFAST model with recent MODIS data,
+we want to test whether the high frequency of breakpoints in 2018
+could be an artifact of the BFAST analysis.
+
+::: {#fig-bp}
+![Image_bp](./bp.pdf){width="15cm"}
+Shows the trends of the detected breakpoints. The BFAST analysis was done with
+the spatially corrected NDVI (black) and EVI (red) time series.
+Left: number of breakpoints within pixels with NDVI-local greening (black)
+and EVI-local greening (red).
+Center: number of all breakpoints.
+Right: Share between all breakpoints and breakpoints detected in within local greening pixel.
+:::
+
+```{r}
+#remove all object from before
+rm(list = ls())
+# SLM
+setwd("evi_ndvi_modis061/")
+files <- list.files(pattern = "project", full.names = F)
+x <- sub(".*v12_(\\d{4}).*", "\\1", files)
+var_name_p <- paste0("slm_", x)
+slm_list <- lapply(seq_along(files), function(x){
+  res <- read.csv(files[x])
+  return(res)
+})
+names(slm_list) <- var_name_p #give df names for clarification
+
+index_ndvi_zero <- slm_list$slm_0500$index[slm_list$slm_0500$NDVImask == 0 |
+                                             is.na(slm_list$slm_0500$NDVImask)]
+slm_list <- lapply(slm_list, function(df) {
+  df <- df %>%
+    mutate(mean = round(mean, 10)) %>%
+    filter(NDVImask != 0 & !is.na(NDVImask)) %>%        # filtering out 0 and NA
+    # distinct(mean, definition, .keep_all = TRUE) %>%  # drop duplicates
+    mutate(slm_lg = mean) %>% 
+    select(definition, index, slm_lg, type) %>% 
+    arrange(index)
+
+  return(df)
+})
+
+# combined regions
+cr <- read.csv("mean_AI_country_LU_region_v12.csv") %>% 
+  filter(!index %in% index_ndvi_zero) %>%
+  group_by(index) %>%
+  summarise(cr_lg = mean(mean)) %>%
+  select(cr_lg,index)
+
+slm_cr <- lapply(slm_list, function(x){
+  x <- x %>% inner_join(y = cr, by = "index")
+})
+```
+## T test
+### Create T test Function
+```{r}
+T_test_custom_simp <- function(slm_cr, alternative, print_results) {
+  # Initialize vectors for results
+  pvals <- numeric()
+  mean_x <- numeric()
+
+  # Populate pvals and mean_x
+  for (i in names(slm_cr)) {
+      t_result <- t.test(
+        slm_cr[[i]]$slm_lg,
+        slm_cr[[i]]$cr_lg,
+        paired = FALSE,
+        alternative = alternative,
+        var.equal = FALSE,
+        mu = 0
+      )
+
+      pvals[i] <- t_result$p.value
+      mean_x[i] <- t_result$estimate["mean of x"]
+  }
+
+  # Print results if print_results is TRUE
+  if (print_results) {
+    cat("P-values:\n")
+    print(pvals)
+    cat("\nMeans of x:\n")
+    print(mean_x)
+  }
+
+  # Prepare results
+  ttest_results <- data.frame(
+    pvals = pvals,
+    mean_x = mean_x
+  )
+
+  return(ttest_results)
+}
+
+```
+### T test For all SLM
+```{r}
+all_prj_1sided <- T_test_custom_simp(slm_cr = slm_cr,
+                                     alternative = "greater",
+                                     print_results =F)
+```
+### T test For Project Type Specific SLM Subset
+```{r}
+types_s <- unique(slm_cr$slm_0500$type)
+subnames <- paste0("type_",gsub("\\s+", "", types_s)) # deleting white spaces
+
+sub_ls <- list()
+
+for (i in types_s) {
+  types <- gsub("\\s+", "", i)
+  sub_ls[[types]] <- lapply(slm_cr, function(x){
+    x %>% filter(type == i)
+  })
+}
+```
+```{r}
+sub_ttest <- lapply(sub_ls, function(x){
+  T_test_custom_simp(slm_cr = x,
+                     alternative = "greater",
+                     print_results = F)
+})
+```
+## Calculate mean and se for SLM_LG and CR_LG
+### For all SLM
+```{r}
+# take mean lg_slm and lg_cr for all
+all_slm_sum <- sapply(slm_cr, function(x){
+  x <- x %>%  summarise(mean_slm_lg = mean(slm_lg),
+                        se_slm_lg = sd(slm_lg) / sqrt(n()),
+                        mean_cr_lg = mean(cr_lg),
+                        se_cr_lg = sd(cr_lg) / sqrt(n()))
+}, simplify = TRUE) %>%
+  t() %>%
+  as.data.frame() %>% 
+  rownames_to_column(var = "buffer") %>% 
+  pivot_longer(- buffer, values_to = "vals", names_to = "vars") 
+
+# bring the pvals in a similar format
+all_p_slm <- all_prj_1sided %>%
+  rownames_to_column(var = "buffer") %>% 
+  inner_join(y = all_slm_sum, by = "buffer") %>% 
+  mutate(type = "all") %>% 
+  select(type, everything(), -mean_x)
+  
+
+# take mean lg_slm and lg_cr for subsets
+sub_slm_ls_sum <- lapply(sub_ls, function(x){
+  lapply(x, function(y){
+    y <- y %>%  summarise(mean_slm_lg = mean(slm_lg),
+                          se_slm_lg = sd(slm_lg) / sqrt(n()),
+                          mean_cr_lg = mean(cr_lg),
+                          se_cr_lg = sd(cr_lg) / sqrt(n()))
+  })
+})
+
+# unwrap the lists and join them
+sub_slm_sum <- map_dfr(sub_slm_ls_sum,
+                       ~ map_dfr(.x, ~ .x, .id = "buffer"), .id = "type") %>% 
+  pivot_longer(-c(type, buffer), names_to = "vars", values_to = "vals")
+sub_p <- map_dfr(sub_ttest,
+                 ~ .x %>% rownames_to_column("buffer"), .id = "type") %>% 
+  select(-mean_x)
+
+sub_p_slm <- sub_p %>%
+  inner_join(sub_slm_sum, by = c("buffer", "type"))
+```
+## Final Plot
+```{r}
+fig3_pre1 <- rbind(sub_p_slm, all_p_slm) %>% 
+  mutate(buffer = case_when(vars == "mean_cr_lg" ~ "cr",
+                            vars == "se_cr_lg" ~ "cr",
+                            TRUE ~ buffer))
+
+fig3_pre2 <- fig3_pre1 %>%
+  distinct(type, buffer, vars, vals, .keep_all = T) %>% 
+  pivot_wider(id_cols = c(buffer, type, pvals),
+              names_from = vars,
+              values_from = vals)  %>% 
+  mutate(mean_ = as.numeric(coalesce(mean_slm_lg, mean_cr_lg)),
+         se_ = as.numeric(coalesce(se_slm_lg, se_cr_lg))) %>% 
+  select(mean_, se_, type, buffer, pvals) %>% 
+  mutate(shape = case_when(buffer == "cr" ~ buffer,
+                           TRUE ~ "slm")) %>% 
+  mutate(key = case_when(pvals <= 0.05 & shape == "slm" ~ "s",
+                         pvals > 0.05 & shape == "slm" ~ "r",
+                         shape == "cr" ~ "t"))
+
+# filter out all, revegetation, naturalregeneration
+fig3 <- fig3_pre2 %>%
+  filter(type %in% c("all", "revegetation", "naturalregeneration")) %>% 
+  mutate(type = factor(type,
+                       levels = c("all",
+                                  "revegetation",
+                                  "naturalregeneration")),
+         buffer = factor(buffer, levels = c("slm_5000",
+                                            "slm_4000",
+                                            "slm_3000",
+                                            "slm_2000",
+                                            "slm_1000",
+                                            "slm_0500",
+                                            "cr")))
+ 
+```
+```{r}
+#| label: "fig-fig3_modis061"
+#| fig-width: 5.5
+#| fig-height: 5
+#| fig-cap: "Mean and standard error(se) of the share of local greening in all SLM (left) and SLM subsets by project type (mid, right). Mean and se are given for each buffer size around the SLM. Stars show significant differences between SLM_LG and CR_LG from a one sided T test. Projects with a median NDVI > 0.15 were filtered out. Local greening based on EVI and NDVI data from MOD13Q1.061"
+
+ggplot(data = fig3,
+       aes(y = mean_, x = buffer)) + 
+  geom_point(aes(shape = key), 
+             position = position_dodge(width = 0.5), size = 3) +
+  geom_errorbar(aes(ymin = mean_ - se_, ymax = mean_ + se_),
+                position = position_dodge(width = 0.5),
+                width = 0.2) +
+  scale_shape_manual(values = c(16, 8, 17),
+                   labels = c("SLM_LG\nmean", "P <= 0.05", "CR_LG\nmean")) +
+  scale_x_discrete(labels = c("5", "4", "3", "2", "1", "0.5", "cr")) +
+  labs(
+    title = "",
+    x = "Radius around Project Point[km]",
+    y = "Fraction of Greening Pixels around Point",
+    cex = 2,
+    shape = NULL
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = c(0.5, 0.35),
+    legend.justification = c(2, -1),# Position legend at the top
+    legend.direction = "horizontal",  # Arrange items horizontally
+    legend.box = "horizontal",
+    strip.text = element_text(size = 12),
+    legend.background = element_rect(fill = "white", color = "white"), # White box
+    legend.box.margin = margin(0, 0, 0, 0)# Ensure the legend is a single box
+  ) +
+  guides(shape = guide_legend(nrow = 3, ncol = 1)) +  # Set legend layout
+  facet_wrap(~type, ncol = 3, labeller = labeller(type = c(
+  "naturalregeneration" = "Natural Regeneration",
+  "revegetation" = "Revegetation",
+  "all" = "Sustainable Land\nManagement"
+  )))
+```
+```{r}
+#| include: false
+# ggsave(
+#  filename = "figures/fig3_modis061.pdf", 
+#  plot = last_plot(), 
+#  width = 5.5, 
+#  height = 5, 
+#  units = "in"
+# )
+```
+
+
+# V) Masking out SLM
+```{r}
+#| warning: false
+
+# SLM
+rm(list = ls())
+setwd("evi_ndvi/")
+files <- list.files(pattern = "project", full.names = F)
+x <- sub(".*v12_(\\d{4}).*", "\\1", files)
+var_name_p <- paste0("slm_", x)
+slm_list <- lapply(seq_along(files), function(x){
+  res <- read.csv(files[x])
+  return(res)
+})
+names(slm_list) <- var_name_p #give df names for clarification
+
+index_ndvi_zero <- slm_list$slm_0500$index[slm_list$slm_0500$NDVImask == 0 |
+                                             is.na(slm_list$slm_0500$NDVImask)]
+slm_list <- lapply(slm_list, function(df) {
+  df <- df %>%
+    mutate(mean = round(mean, 10)) %>%
+    filter(NDVImask != 0 & !is.na(NDVImask)) %>%        # filtering out 0 and NA
+    # distinct(mean, definition, .keep_all = TRUE) %>%  # drop duplicates
+    mutate(slm_lg = mean) %>% 
+    select(definition, index, slm_lg, type) %>% 
+    arrange(index)
+
+  return(df)
+})
+
+# combined regions
+files <- list.files(pattern = "mean_AI_country_LU_region", full.names = F)
+x <- sub(".*Mask(\\d+).*", "\\1", files)
+var_name_cr <- paste0("km_", x)
+var_name_cr[1] <- "nomask"
+cr_list <- lapply(seq_along(files), function(x){
+  res <- read.csv(files[x])
+  return(res)
+})
+names(cr_list) <- var_name_cr
+
+cr_list <- lapply(cr_list, function(df) {
+  df <- df %>%
+    filter(!index %in% index_ndvi_zero) %>%
+    mutate(cr_lg = mean) %>% 
+    select(cr_lg,sumsum,index)
+  return(df)
+})
+
+# combine SLM and CR
+lg_cr <- lapply(cr_list, function(x){
+  x %>% 
+    group_by(index) %>% 
+    summarize(new = mean(cr_lg, na.rm = TRUE))
+}) %>% bind_cols() %>% select(1,2,4,6,8,10,12,14)
+
+names(lg_cr) <- c("index_cr", var_name_cr)
+
+slm_cr <- lapply(slm_list, function(x) bind_cols(x, lg_cr))
+```
+## Visualize Data
+```{r}
+#| label: "fig-lg-buffer-slm"
+#| fig-width: 4
+#| fig-height: 4
+#| fig-cap: "The sum of the share of local greening is shown for different buffer sizes around the SLM. Local greening based on EVI and NDVI data from MOD13Q1.006"
+
+
+lg <- sapply(slm_list, function(x) sum(x$slm_lg))
+par(mar = c(5,5,5,5), mgp = c(3,1,0))
+barplot(lg,
+        beside = T, xlab = "Buffer[m]", ylab = "Sum of SLM_LG",
+        names.arg = c("500", "1000", "2000", "3000", "4000", "5000"),
+        las = 2, main = "")
+box(bty = "l")
+```
+Smaller Buffer show a slightly higher share of SLM_LG in average (see @fig-lg-buffer-slm). This seems intuitive, as most projects probably have higher impact in adjacent localities.
+
+```{r}
+#| label: "fig-lg-buffer-cr"
+#| fig-width: 4
+#| fig-height: 4
+#| fig-cap: "The sum of the share of local greening within the CR is shown for different maskings. On the X-Axis are shown the buffer sizes around the SLM used for masking the CR during the calculation of LG_CR. Local greening based on EVI and NDVI data from MOD13Q1.006"
+
+mean_sums_cr <- sapply(cr_list, function(x) sum(x$cr_lg))
+ra <- range(mean_sums_cr)
+
+par(mar = c(6,6,6,6), mgp = c(4, 1, 0))
+barplot(
+  mean_sums_cr,
+  beside = TRUE,                         
+  xlab = "Buffer[m]",                 
+  ylab = "Sum of CR_LG",                
+  names.arg = c("no mask","500", "1000", "2000", "3000", "4000", "5000"), 
+  las = 2,                               
+  main = "",                     
+  xpd = FALSE,
+  ylim = c(ra[1] - ra[1]/1000, ra[2])
+)
+box(bty = "l")
+```
+When enlarging the mask (buffer around the SLM), we get higher CR_LG (see @fig-lg-buffer-cr).
+
+```{r}
+#| label: "fig-lg-buffer-cr-sum"
+#| fig-width: 5
+#| fig-height: 5
+#| fig-cap: "The sum of absolute local greening pixels within the CR is shown for different maskings. On the X-Axis are shown the buffer sizes around the SLM used for masking the CR during the calculation of LG_CR.  Local greening based on EVI and NDVI data from MOD13Q1.006"
+
+sum_lg <- sapply(cr_list, function(x) sum(x$sumsum))
+ra <- range(sum_lg)
+
+par(mar = c(8,8,8,8), mgp = c(5, 1, 0))
+barplot(
+  sum_lg,
+  beside = TRUE,                         
+  xlab = "Buffer[m]",                 
+  ylab = "Sum of local greening pixels analysed",                
+  names.arg = c("no mask","500", "1000", "2000", "3000", "4000", "5000"), 
+  las = 2,                               
+  main = "",                     
+  xpd = FALSE,
+  ylim = c(ra[1] - ra[1]/1000, ra[2])
+)
+box(bty = "l")
+```
+To check whether the masking method worked, we plot the total number of local greening pixels analysed per choosen mask (see @fig-lg-buffer-cr-sum). The masking seems to have worked out well, as the number of local greening pixel shrinks exponentially with the area of the applied mask.
+
+## T test
+### Create T test Function
+for easier handling, we create a function that computes the T test with adjustable arguments, stores the results in a list and visualizes them as well.
+```{r}
+T_test_custom <- function(slm_cr, var_name_cr, alternative) {
+  # Initialize data frames for results
+  pvals <- data.frame(matrix(nrow = length(names(slm_cr)), ncol = length(var_name_cr)))
+  colnames(pvals) <- var_name_cr
+  row.names(pvals) <- names(slm_cr)
+  
+  mean_x <- data.frame(matrix(nrow = length(names(slm_cr)), ncol = length(var_name_cr)))
+  colnames(mean_x) <- var_name_cr
+  row.names(mean_x) <- names(slm_cr)
+  
+  mean_y <- data.frame(matrix(nrow = length(names(slm_cr)), ncol = length(var_name_cr)))
+  colnames(mean_y) <- var_name_cr
+  row.names(mean_y) <- names(slm_cr)
+  
+  # Populate pvals, mean_x, and mean_y
+  for (i in names(slm_cr)) {
+    for (j in var_name_cr) {
+      t_result <- t.test(
+        slm_cr[[i]]$slm_lg,
+        slm_cr[[i]][[j]],
+        paired = FALSE,
+        alternative = alternative,
+        var.equal = FALSE,
+        mu = 0
+      )
+      
+      pvals[i, j] <- t_result$p.value
+      mean_x[i, j] <- t_result$estimate["mean of x"]
+      mean_y[i, j] <- t_result$estimate["mean of y"]
+    }
+  }
+  
+  # Combine results into a single list
+  results <- list(
+    P_Values = pvals,
+    Mean_X = mean_x,
+    Mean_Y = mean_y
+  )
+  
+  return(results)
+}
+```
+### Apply T test Function
+We visualize only the results for the one sided T Test, as this seams the appropriate test for us.
+
+Additionally, we checked also the results of the two sided T Test. The results are the same as the one sided T Test, besides the *P* values being twice as large now.
+```{r}
+# Apply function and display tables in LaTeX format
+all_prj_1sided <- T_test_custom(slm_cr = slm_cr, var_name_cr = var_name_cr, alternative = "greater")
+all_prj_2sided <- T_test_custom(slm_cr = slm_cr, var_name_cr = var_name_cr, alternative = "two.sided")
+```
+
+```{r}
+all_prj_1sided$P_Values
+all_prj_1sided$Mean_X
+all_prj_1sided$Mean_Y
+```
+
+```{r}
+#|include: false
+# Print tables for LaTeX
+print(xtable(all_prj_1sided$P_Values, caption = "P-values for One-Sided T-Test", digits = 5), type = "latex")
+print(xtable(all_prj_1sided$Mean_X, caption = "Means of share of local greening within specific SLM buffer after a One-Sided T-Test", digits = 5), type = "latex")
+print(xtable(all_prj_1sided$Mean_Y, caption = "Means of share of local greening for all possible combined regions after a One-Sided T-Test", digits = 5), type = "latex")
+```
+
+
+## Conclusion
+By confronting *P* values with and without mask, we conclude that masking the SLM in the CR when calculating the CR_LG doesn't influence the results. This is probably due to the small area of the buffered SLMs compared to the area of the CR.
+The *P* values don't change substantially when a mask is applied (i.e., within the same row) (see @fig-ttest-results-1 -  @fig-ttest-results-3).
+
+
